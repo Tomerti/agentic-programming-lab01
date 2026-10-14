@@ -1,10 +1,12 @@
 // Boots the game and runs the frame loop: the scene, the world outside under the day/night lighting, the
 // control room with its monitors and console controls, the game session that they show and drive, the
-// rockets, interceptors, explosions, shakes and siren that show its events, the 2D HUD over the view (the
-// resources bar, the mission line, toasts and banners), and the screens and the shop over it all. The game
-// opens on the title screen. The audio arrives in Task 16, the rest of the keyboard in Task 17.
+// rockets, interceptors, explosions, shakes and siren that show its events, the sound of its events and of
+// the controls, the 2D HUD over the view (the resources bar, the mission line, toasts and banners), and the
+// screens and the shop over it all. The game opens on the title screen. The rest of the keyboard arrives in
+// Task 17.
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { createAudio } from './audio.js';
 import { TIMING, WORLD } from './config.js';
 import { createBus } from './core/events.js';
 import { createRng } from './core/rng.js';
@@ -49,6 +51,11 @@ const effects = createEffects({ THREE, scene, outsideGroup: scene.outsideGroup, 
 const bus = createBus();
 const session = createSession({ rng: createRng(), persistence, bus });
 const { state } = session;
+// The sound plays the session's events, its explosions heard from the window. It stays silent until a screen's button
+// that starts play unlocks it (browsers allow sound only after a user gesture). It keeps the volume and the mute in
+// `settings`; the settings screen saves its own changes, and a mute toggled from the keyboard (M) is saved here.
+const audio = createAudio(settings, { onMutedChange: () => persistence.saveSettings(settings) });
+audio.bind(bus, session, { listener: WINDOW_CENTRE });
 
 let zoom = 1; // the radar zoom, 1× or 2×; the dial switches it
 let time = 0;
@@ -61,7 +68,8 @@ const monitors = createMonitorPainter(room.monitors, session, () => ({
   clockText: formatClock(hour),
 }));
 
-// A click on a screen selects the track whose radar blip or list row is under it. A jammed radar shows none.
+// A click on a screen selects the track whose radar blip or list row is under it, with a soft click. A jammed radar
+// shows none.
 function selectOnScreen({ monitor, px, py }) {
   if (state.jammed) return;
   const tracks = sortedDetectedThreats(state);
@@ -69,9 +77,15 @@ function selectOnScreen({ monitor, px, py }) {
   let id = null;
   if (monitor === 'radar') id = radarBlipAt(tracks, { width, height, zoom }, px, py);
   else if (monitor === 'threats') id = threatRowAt(tracks, py);
-  if (id !== null) session.selectTrack(id);
+  if (id !== null && session.selectTrack(id)) audio.play('click', { gain: 0.5 });
 }
 
+// The sound of each console control as it is pressed: the big buttons click, the toggles, the lever, the dial and the
+// system buttons clack. The phone rings through the session's hq:line; the mug makes no sound.
+const CONTROL_SOUNDS = Object.freeze({
+  engage: 'click', alert: 'click', hold: 'click', resetRadar: 'click',
+  toggle: 'clack', lever: 'clack', dial: 'clack', system: 'clack',
+});
 // What each console control does. The lever, the toggles, the system buttons and the mug do nothing in the game.
 const actions = {
   engage: () => session.engage(),
@@ -84,7 +98,10 @@ const actions = {
 };
 const controls = createControls({
   THREE, RoundedBoxGeometry, scene, camera: scene.camera, desk: room.desk, monitors: room.monitors, room,
-  onAction: (name, detail) => actions[name]?.(detail),
+  onAction: (name, detail) => {
+    if (Object.hasOwn(CONTROL_SOUNDS, name)) audio.play(CONTROL_SOUNDS[name]);
+    actions[name]?.(detail);
+  },
 });
 
 bus.on('hold:changed', ({ on }) => controls.setLamp('hold', on));
@@ -122,19 +139,24 @@ const reactions = {
 };
 for (const [type, react] of Object.entries(reactions)) bus.on(type, react);
 
-// The HUD shows itself when a round starts and hides on game over and victory. The low-resource warning has
-// no sound until the audio arrives (Task 16).
-const hud = createHud({ root: document.getElementById('app'), bus, session, settings, onLowResource: () => {} });
+// The HUD shows itself when a round starts and hides on game over and victory. While a resource is low it sounds
+// the warning beeps (at most every 8 s).
+const hud = createHud({
+  root: document.getElementById('app'), bus, session, settings, onLowResource: () => audio.play('warning'),
+});
 
 // The screens and the shop take turns in the overlay container, one at a time. While it holds one, the room gets no
 // pointer input (see the pointer handlers and the frame loop). The settings screen changes `settings` in place: the
-// effects and the HUD read it as they go, the shadows are switched here, and the audio (Task 16, none yet) is told
-// by the screen itself.
+// effects and the HUD read it as they go, and the shadows, the volume and the mute are applied here. The buttons
+// that start play unlock the audio.
 const overlay = document.getElementById('overlay');
-const audio = null;
 const screens = createScreens({
   root: overlay, session, persistence, settings, audio, hud,
-  onSettingsChange: () => scene.setShadows(settings.shadows !== false),
+  onSettingsChange: () => {
+    scene.setShadows(settings.shadows !== false);
+    audio.setVolume(settings.volume);
+    audio.setMuted(settings.muted);
+  },
 });
 const shop = createShop({ root: overlay, session, economy: session.economy });
 const screenShown = () => overlay.childElementCount > 0;
@@ -175,7 +197,7 @@ function clickControl(name) {
 }
 
 Object.assign(game, {
-  scene, outside, room, monitors, session, controls, bus, projectiles, effects, hud, screens, shop,
+  scene, outside, room, monitors, session, controls, bus, projectiles, effects, hud, screens, shop, audio,
   debug: { clickControl },
 });
 
