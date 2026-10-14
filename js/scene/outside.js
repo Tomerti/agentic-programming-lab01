@@ -29,7 +29,7 @@ const SANDSTONE = [0xe0bd88, 0xd4ad7a, 0xeed2a4, 0xc49a6a];
 const CITY_SEED = 7; // the mockup's seed: the same city as the approved mockup
 const STAR_SEED = 11;
 const LANDMARK = { x: -1.5, z: -11 };
-const LAUNCHER = { x: 5.2, z: -7.2, yaw: -0.4 };
+const LAUNCHER = { x: 3.8, z: -7.2, yaw: -0.4 };
 const TUBE_LENGTH = 1.2;
 const TUBE_TILT = 0.8; // radians from vertical, leaning towards the city
 
