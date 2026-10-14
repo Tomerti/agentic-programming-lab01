@@ -56,7 +56,6 @@ let hour = START_HOUR;
 let time = 0;
 const monitors = createMonitorPainter(room.monitors, session, () => ({
   time,
-  selectedId: session.state.selectedId,
   revealDecoys: false,
   zoom: 1,
   phaseName: phaseName(hour),

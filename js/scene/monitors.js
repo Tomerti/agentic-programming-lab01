@@ -4,9 +4,10 @@
 // threatRowAt) runs in Node's tests; the drawing functions take the 2D context they paint.
 //
 // A `view` is { width, height, zoom }: the canvas size in pixels (y down) and the radar zoom, 1 or 2. The
-// radar shows the outside world from above, centred on WORLD.cityCenter, with −z (away from the room) up.
-// `opts` is { time, selectedId, revealDecoys, zoom, phaseName, clockText }: the time in seconds (it turns
-// the sweep), the selected track, whether the Signature analyzer reveals decoys, and the clock to show.
+// radar shows the outside world from above, centred on WORLD.cityCenter, with −z (away from the room) up;
+// its ring covers WORLD.radarRadius / zoom units. `opts` is { time, revealDecoys, zoom, phaseName,
+// clockText }: the time in seconds (it turns the sweep), whether the Signature analyzer reveals decoys, the
+// zoom (the painter copies it into the views) and the clock to show. The selection is state.selectedId.
 import { WORLD, THREATS } from '../config.js';
 import { timeToImpact } from '../game/threats.js';
 import { sortedDetectedThreats } from '../game/session.js';
@@ -21,6 +22,9 @@ const SCOPE_MARGIN = 22;
 const SWEEP_RATE = 1.2; // radians per second
 const SWEEP_TRAIL = 0.9; // radians of fading glow behind the sweep line
 const BLIP_RADIUS = 5.5;
+const LABEL_SIZE = 15;
+const LABEL_CAP = 11; // the height of a label's capitals
+const LABEL_GAP = 10; // between a blip and its label
 const STATIC_SPECKS = 900;
 
 // The threat list: row i is centred on y = ROW_TOP + ROW_STEP · i and is hit from ROW_ABOVE above that
@@ -31,6 +35,21 @@ const ROW_ABOVE = 18;
 const ROW_BELOW = 12;
 const MAX_ROWS = 5;
 const LOG_LINES = 6;
+const MAX_MISSIONS = 2;
+
+// Canvas positions on the threat screen: the jammed notice, and the area under the fifth row, with the
+// missions on the left and the log on the right. Baselines are y values; a column runs from x to right.
+const LAYOUT = {
+  signal: { y: 100, hintY: 132 },
+  lower: {
+    top: 226, // the divider, 6 px under the fifth row
+    labelY: 239,
+    firstLine: 254,
+    missions: { x: 14, textX: 30, right: 246, line: 15, gap: 6 },
+    split: 256, // the line between the columns
+    log: { x: 266, right: 498, line: 14 },
+  },
+};
 
 const FAMILY = '"Chakra Petch", Inter, system-ui, sans-serif';
 const font = (size, weight = 700) => `${weight} ${size}px ${FAMILY}`;
@@ -56,20 +75,28 @@ function scopeOf({ width, height, zoom = 1 }) {
   return { cx: width / 2, cy: height / 2 + SCOPE_DROP, radius, scale: radius / (WORLD.radarRadius / zoom) };
 }
 
+const project = (pos, { cx, cy, scale }) => ({
+  x: cx + (pos.x - WORLD.cityCenter.x) * scale,
+  y: cy + (pos.z - WORLD.cityCenter.z) * scale,
+});
+const inScope = ({ x, y }, { cx, cy, radius }) => Math.hypot(x - cx, y - cy) <= radius;
+
 // Where an outside point (its x and z) shows on the radar canvas.
 export function radarProject(pos, view) {
-  const { cx, cy, scale } = scopeOf(view);
-  return { x: cx + (pos.x - WORLD.cityCenter.x) * scale, y: cy + (pos.z - WORLD.cityCenter.z) * scale };
+  return project(pos, scopeOf(view));
 }
 
 // The id of the threat whose blip is nearest to the canvas point (px, py), if it is within maxDist pixels;
-// otherwise null.
+// otherwise null. A threat beyond the ring has no blip, only a marker on the rim, and is picked from the
+// threat list instead.
 export function radarBlipAt(threats, view, px, py, maxDist = 18) {
+  const scope = scopeOf(view);
   let found = null;
   let nearest = Infinity;
   for (const threat of threats) {
-    const { x, y } = radarProject(threat.position, view);
-    const distance = Math.hypot(x - px, y - py);
+    const blip = project(threat.position, scope);
+    if (!inScope(blip, scope)) continue;
+    const distance = Math.hypot(blip.x - px, blip.y - py);
     if (distance <= maxDist && distance < nearest) {
       found = threat.id;
       nearest = distance;
@@ -102,7 +129,6 @@ const typeLabel = (threat, opts) => {
 const zoneLabel = ({ zone }) => (
   zone === 'open' ? 'OPEN' : (WORLD.neighborhoods.find(n => n.id === zone)?.name ?? zone).toUpperCase()
 );
-const selectedOf = (state, opts) => opts.selectedId ?? state.selectedId ?? null;
 const clockOf = (state, opts) => ({
   clock: opts.clockText ?? formatClock(state.clockHour),
   phase: (opts.phaseName ?? phaseName(state.clockHour)).toUpperCase(),
@@ -177,12 +203,13 @@ function drawStatic(ctx, cx, cy, radius) {
   ctx.restore();
 }
 
-function drawInterceptors(ctx, view, state) {
+function drawInterceptors(ctx, scope, state) {
   for (const interceptor of state.interceptors ?? []) {
-    const from = radarProject(interceptor.position, view);
+    const from = project(interceptor.position, scope);
+    if (!inScope(from, scope)) continue; // beyond the ring: not shown
     const target = state.threats.find(t => t.id === interceptor.targetId);
     if (target) {
-      const to = radarProject(target.position, view);
+      const to = project(target.position, scope);
       ctx.strokeStyle = 'rgba(143, 243, 255, 0.6)';
       ctx.lineWidth = 1.5;
       ctx.setLineDash([5, 4]);
@@ -198,40 +225,95 @@ function drawInterceptors(ctx, view, state) {
   }
 }
 
-function drawTracks(ctx, view, tracks, opts, selectedId) {
-  for (const threat of tracks) {
-    const { x, y } = radarProject(threat.position, view);
-    const hostile = looksPopulated(threat, opts);
-    if (isRevealedDecoy(threat, opts)) {
-      ctx.strokeStyle = C.decoy;
-      ctx.lineWidth = 2;
-      circle(ctx, x, y, BLIP_RADIUS);
-      ctx.stroke();
-    } else {
-      ctx.fillStyle = hostile ? C.red : C.grey;
-      circle(ctx, x, y, BLIP_RADIUS);
-      ctx.fill();
-    }
-    if (threat.id === selectedId) {
-      ctx.strokeStyle = C.gold;
-      ctx.lineWidth = 2.5;
-      circle(ctx, x, y, BLIP_RADIUS + 6 + Math.sin((opts.time ?? 0) * 6) * 1.5);
-      ctx.stroke();
-    }
-    const label = isRevealedDecoy(threat, opts) ? `TRK-${threat.id} DECOY` : `TRK-${threat.id}`;
-    const onLeft = x > view.width - 100; // near the right edge the label goes on the blip's left
-    text(ctx, label, onLeft ? x - 10 : x + 10, y - 8, {
-      size: 15, color: hostile ? C.redSoft : C.greySoft, align: onLeft ? 'right' : 'left',
-    });
+function drawSelection(ctx, x, y, time) {
+  ctx.strokeStyle = C.gold;
+  ctx.lineWidth = 2.5;
+  circle(ctx, x, y, BLIP_RADIUS + 6 + Math.sin(time * 6) * 1.5);
+  ctx.stroke();
+}
+
+// A track beyond the ring: a hollow chevron on the rim at its bearing, pointing out towards it.
+function drawRimMarker(ctx, { cx, cy, radius }, blip, color, selected, time) {
+  const bearing = Math.atan2(blip.y - cy, blip.x - cx);
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(bearing);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2.5;
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(radius - 13, -6);
+  ctx.lineTo(radius - 5, 0);
+  ctx.lineTo(radius - 13, 6);
+  ctx.stroke();
+  if (selected) drawSelection(ctx, radius - 9, 0, time);
+  ctx.restore();
+}
+
+// Writes the blips' labels, most urgent first. A label goes at its blip's upper right, above it, at its upper
+// left, or the same three below it: the first of these inside the ring that covers no blip and no label
+// written before it, else the first inside the ring, else the upper right (cut off by the ring). Straight
+// above or below a blip, a label clears the selection ring.
+function drawLabels(ctx, { cx, cy, radius }, labels) {
+  ctx.font = font(LABEL_SIZE);
+  const halfChord = row => Math.sqrt(Math.max(radius ** 2 - (row - cy) ** 2, 0)); // the ring's half-width there
+  const inRing = box => {
+    const half = Math.min(halfChord(box.top), halfChord(box.bottom));
+    return box.left >= cx - half && box.right <= cx + half;
+  };
+  const taken = labels.map(({ blip: { x, y } }) => ({
+    left: x - BLIP_RADIUS, right: x + BLIP_RADIUS, top: y - BLIP_RADIUS, bottom: y + BLIP_RADIUS,
+  }));
+  const free = box => taken.every(t => box.right < t.left || box.left > t.right || box.bottom < t.top || box.top > t.bottom);
+  for (const { string, blip: { x, y }, color } of labels) {
+    const width = ctx.measureText(string).width;
+    const box = (left, baseline) => ({ left, right: left + width, top: baseline - LABEL_CAP, bottom: baseline, baseline });
+    const places = [
+      box(x + LABEL_GAP, y - 8), box(x - width / 2, y - 16), box(x - LABEL_GAP - width, y - 8),
+      box(x + LABEL_GAP, y + 20), box(x - width / 2, y + 26), box(x - LABEL_GAP - width, y + 20),
+    ];
+    const place = places.find(b => inRing(b) && free(b)) ?? places.find(inRing) ?? places[0];
+    taken.push(place);
+    text(ctx, string, place.left, place.baseline, { size: LABEL_SIZE, color });
   }
 }
 
+function drawTracks(ctx, scope, tracks, opts, selectedId) {
+  const time = opts.time ?? 0;
+  const labels = [];
+  for (const threat of tracks) {
+    const blip = project(threat.position, scope);
+    const hostile = looksPopulated(threat, opts);
+    const revealed = isRevealedDecoy(threat, opts);
+    const color = revealed ? C.decoy : hostile ? C.red : C.grey;
+    if (!inScope(blip, scope)) {
+      drawRimMarker(ctx, scope, blip, color, threat.id === selectedId, time);
+      continue;
+    }
+    circle(ctx, blip.x, blip.y, BLIP_RADIUS);
+    if (revealed) {
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    } else {
+      ctx.fillStyle = color;
+      ctx.fill();
+    }
+    if (threat.id === selectedId) drawSelection(ctx, blip.x, blip.y, time);
+    labels.push({ string: revealed ? `TRK-${threat.id} DECOY` : `TRK-${threat.id}`, blip, color: hostile ? C.redSoft : C.greySoft });
+  }
+  drawLabels(ctx, scope, labels);
+}
+
 // The radar: rings, the sweep, the city, the tracks (red populated, grey open, hollow when a revealed
-// decoy), the interceptors with a line to their target, a ring around the selected track, the status.
+// decoy), the interceptors with a line to their target, a ring around the selected track, the status. All
+// of it stays inside the ring: a track beyond it shows as a chevron on the rim, an interceptor not at all.
 export function drawRadar(ctx, view, state, opts = {}) {
   const { width, height } = view;
-  const { cx, cy, radius } = scopeOf(view);
-  const zoom = view.zoom ?? opts.zoom ?? 1;
+  const scope = scopeOf(view);
+  const { cx, cy, radius } = scope;
+  const zoom = view.zoom ?? 1;
   const tracks = sortedDetectedThreats(state);
   ctx.save();
   fillBackground(ctx, view, C.screen);
@@ -252,10 +334,14 @@ export function drawRadar(ctx, view, state, opts = {}) {
   if (state.jammed) drawStatic(ctx, cx, cy, radius);
   else {
     drawSweep(ctx, cx, cy, radius, opts.time ?? 0);
+    ctx.save();
+    circle(ctx, cx, cy, radius);
+    ctx.clip();
     ctx.fillStyle = C.gold;
     ctx.fillRect(cx - 5, cy - 5, 10, 10); // the city
-    drawInterceptors(ctx, view, state);
-    drawTracks(ctx, view, tracks, opts, selectedOf(state, opts));
+    drawInterceptors(ctx, scope, state);
+    drawTracks(ctx, scope, tracks, opts, state.selectedId);
+    ctx.restore();
   }
 
   text(ctx, 'RADAR · JERUSALEM', 14, 24, { size: 18, color: C.title });
@@ -364,60 +450,95 @@ function drawRows(ctx, view, tracks, opts, selectedId) {
 function drawCheckbox(ctx, x, y, done) {
   ctx.strokeStyle = done ? C.green : C.muted;
   ctx.lineWidth = 2;
-  ctx.strokeRect(x, y, 13, 13);
+  ctx.strokeRect(x, y, 11, 11);
   if (!done) return;
   ctx.beginPath();
-  ctx.moveTo(x + 3, y + 7);
-  ctx.lineTo(x + 6, y + 10);
-  ctx.lineTo(x + 11, y + 3);
+  ctx.moveTo(x + 2.5, y + 6);
+  ctx.lineTo(x + 5, y + 8.5);
+  ctx.lineTo(x + 9, y + 2.5);
   ctx.stroke();
 }
 
-// The threat list: up to five tracks by time to impact (SIGNAL LOST while jammed), then the round's
-// missions with their progress and the newest log lines.
+// Breaks `string` into lines that fit widths[0], widths[1], ... in the font set on ctx, one line per width.
+// When words are left over, the last line ends in an ellipsis.
+function wrap(ctx, string, widths) {
+  const words = string.split(' ');
+  const lines = [];
+  let next = 0;
+  for (const width of widths) {
+    if (next >= words.length) break;
+    let line = words[next++];
+    while (next < words.length && ctx.measureText(`${line} ${words[next]}`).width <= width) line += ` ${words[next++]}`;
+    lines.push(line);
+  }
+  if (next < words.length) {
+    const last = lines.length - 1;
+    let line = lines[last];
+    while (line.length > 1 && ctx.measureText(`${line}…`).width > widths[last]) line = line.slice(0, -1);
+    lines[last] = `${line.trimEnd()}…`;
+  }
+  return lines;
+}
+
+// The left column under the rows: the round's missions, each with a checkbox, its text on up to two lines
+// and its progress.
+function drawMissions(ctx, missions) {
+  const { labelY, firstLine, missions: column } = LAYOUT.lower;
+  text(ctx, 'MISSIONS', column.x, labelY, { size: 12, color: C.amber });
+  let y = firstLine;
+  for (const mission of missions.slice(0, MAX_MISSIONS)) {
+    const progress = `${mission.progress}/${mission.goal}`;
+    ctx.font = font(13);
+    const progressWidth = ctx.measureText(progress).width + 6;
+    text(ctx, progress, column.right, y, { size: 13, color: mission.done ? C.green : C.ink, align: 'right' });
+    drawCheckbox(ctx, column.x, y - 10, mission.done);
+    const width = column.right - column.textX;
+    ctx.font = font(13, 600);
+    const lines = wrap(ctx, mission.text, [width - progressWidth, width]);
+    for (const line of lines) {
+      text(ctx, line, column.textX, y, { size: 13, weight: 600, color: mission.done ? C.muted : C.ink, maxWidth: width });
+      y += column.line;
+    }
+    y += column.gap;
+  }
+}
+
+// The right column under the rows: the newest log lines, coloured by what they report.
+function drawLog(ctx, log) {
+  const { labelY, firstLine, log: column } = LAYOUT.lower;
+  text(ctx, 'LOG', column.x, labelY, { size: 12, color: C.muted });
+  log.slice(0, LOG_LINES).forEach((line, i) => {
+    const color = LOG_COLORS.find(([pattern]) => pattern.test(line))?.[1] ?? C.greySoft;
+    text(ctx, line, column.x, firstLine + column.line * i, { size: 13, color, maxWidth: column.right - column.x });
+  });
+}
+
+// The threat list: up to five tracks by time to impact (SIGNAL LOST while jammed), and under them the
+// round's missions with their progress beside the newest log lines.
 export function drawThreats(ctx, view, state, opts = {}) {
-  const { width, height } = view;
-  const right = width - 16;
+  const { width } = view;
   const tracks = sortedDetectedThreats(state);
   ctx.save();
   fillBackground(ctx, view, C.panel);
   header(ctx, view, 'THREAT TRACKS');
+  text(ctx, `${state.jammed ? '—' : tracks.length}`, width - 16, 24, { size: 19, color: C.muted, align: 'right' });
 
-  let lowerTop;
   if (state.jammed) {
     const blink = Math.floor((opts.time ?? 0) * 2) % 2 === 0;
-    text(ctx, 'SIGNAL LOST', width / 2, 100, { size: 38, color: blink ? C.red : '#a8323a', align: 'center' });
-    text(ctx, 'PRESS RESET RADAR', width / 2, 132, { size: 17, color: C.muted, align: 'center' });
-    lowerTop = 150;
+    text(ctx, 'SIGNAL LOST', width / 2, LAYOUT.signal.y, { size: 38, color: blink ? C.red : '#a8323a', align: 'center' });
+    text(ctx, 'PRESS RESET RADAR', width / 2, LAYOUT.signal.hintY, { size: 17, color: C.muted, align: 'center' });
   } else if (!tracks.length) {
     text(ctx, 'NO HOSTILE TRACKS', 22, 66, { size: 20, color: C.green });
-    lowerTop = 150;
   } else {
-    drawRows(ctx, view, tracks, opts, selectedOf(state, opts));
-    lowerTop = Math.max(rowY(Math.min(tracks.length, MAX_ROWS)) - 8, 150);
+    drawRows(ctx, view, tracks, opts, state.selectedId);
   }
-  text(ctx, `${state.jammed ? '—' : tracks.length}`, right, 24, { size: 19, color: C.muted, align: 'right' });
 
+  const { top, split } = LAYOUT.lower;
   ctx.fillStyle = C.track;
-  ctx.fillRect(12, lowerTop, width - 24, 2);
-  let y = lowerTop + 21;
-  text(ctx, 'MISSIONS', 16, y, { size: 15, color: C.amber });
-  for (const mission of state.missions ?? []) {
-    y += 20;
-    drawCheckbox(ctx, 16, y - 12, mission.done);
-    text(ctx, mission.text, 38, y, { size: 16, weight: 600, color: mission.done ? C.muted : C.ink, maxWidth: right - 38 - 56 });
-    text(ctx, `${mission.progress}/${mission.goal}`, right, y, { size: 16, color: mission.done ? C.green : C.ink, align: 'right' });
-  }
-  y += 8;
-  ctx.fillStyle = C.track;
-  ctx.fillRect(12, y, width - 24, 1);
-  text(ctx, 'LOG', 16, y + 17, { size: 14, color: C.muted });
-  for (const line of (state.log ?? []).slice(0, LOG_LINES)) {
-    y += 17;
-    if (y > height - 4) break; // a long list of tracks leaves room for fewer lines
-    const color = LOG_COLORS.find(([pattern]) => pattern.test(line))?.[1] ?? C.greySoft;
-    text(ctx, line, 56, y, { size: 16, weight: 600, color, maxWidth: right - 56 });
-  }
+  ctx.fillRect(12, top, width - 24, 2);
+  ctx.fillRect(split, top + 8, 1, view.height - top - 14);
+  drawMissions(ctx, state.missions ?? []);
+  drawLog(ctx, state.log ?? []);
   ctx.restore();
 }
 
