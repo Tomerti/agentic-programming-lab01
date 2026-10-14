@@ -1,0 +1,70 @@
+/* Page shell: palette tokens, the full-viewport 3D canvas and the fatal-error overlay.
+   The HUD, toasts, banners, screens and shop add their rules in later tasks. */
+
+:root {
+  --bg: #0b1020;
+  --panel: rgba(12, 16, 28, .82);
+  --text: #eef2f7;
+  --muted: #b8c2d0;
+  --gold: #ffd166;
+  --teal: #2ad1b0;
+  --red: #ff4b4b;
+  --amber: #ffb020;
+  --blue: #3f8cff;
+  --font-ui: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: "Chakra Petch", var(--font-ui);
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+/* `hidden` must win over any display rule below. */
+[hidden] { display: none !important; }
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+}
+
+#app { position: fixed; inset: 0; }
+
+#viewport { position: absolute; inset: 0; }
+#viewport canvas { display: block; width: 100%; height: 100%; }
+
+#fatal {
+  position: absolute;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(11, 16, 32, .92);
+}
+
+.fatal-card {
+  max-width: 560px;
+  padding: 22px 26px;
+  background: var(--panel);
+  border: 1px solid rgba(255, 75, 75, .45);
+  border-radius: 12px;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, .45);
+}
+
+.fatal-card h1 {
+  margin-bottom: 10px;
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--red);
+}
+
+.fatal-message {
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--muted);
+}

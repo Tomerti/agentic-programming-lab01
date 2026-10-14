@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Iron Dome · Jerusalem Battery</title>
+<script>
+  // Test and debug hook. js/main.js extends it once the modules have loaded; it exists from the start so
+  // that a harness reading it early finds an object.
+  window.__game = { debugHour: null };
+
+  // An uncaught error or rejected promise (no WebGL, the CDN out of reach, a bug) shows #fatal with the
+  // reason instead of leaving a blank or frozen page. The first failure stays on screen.
+  (() => {
+    const showFatal = reason => {
+      const fatal = document.getElementById('fatal');
+      if (!fatal) {
+        document.addEventListener('DOMContentLoaded', () => showFatal(reason), { once: true });
+        return;
+      }
+      if (!fatal.hidden) return;
+      const detail = String(reason || 'unknown error').replace(/\.+$/, '');
+      fatal.querySelector('.fatal-message').textContent = `The game failed to start: ${detail}. `
+        + 'Try a current desktop Chrome, Firefox or Edge with WebGL enabled.';
+      fatal.hidden = false;
+    };
+    // Capturing, so that a script element that fails to load (its error event does not bubble) is seen too.
+    window.addEventListener('error', event => {
+      if (event instanceof ErrorEvent) showFatal(event.error?.message || event.message);
+      else if (event.target instanceof HTMLScriptElement) {
+        showFatal('the game\'s scripts could not be loaded (is cdn.jsdelivr.net reachable?)');
+      }
+    }, true);
+    window.addEventListener('unhandledrejection', event => showFatal(event.reason?.message || event.reason));
+  })();
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@600;700&family=Inter:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="css/style.css">
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
+<script type="module" src="js/main.js"></script>
+</head>
+<body>
+<div id="app">
+  <div id="viewport"></div>
+  <div id="hud" hidden></div>
+  <div id="mission-line" hidden></div>
+  <div id="toasts"></div>
+  <div id="banner" hidden></div>
+  <div id="flash"></div>
+  <div id="overlay"></div>
+  <div id="fatal" role="alert" hidden>
+    <div class="fatal-card">
+      <h1>Iron Dome · offline</h1>
+      <p class="fatal-message"></p>
+    </div>
+  </div>
+</div>
+</body>
+</html>
