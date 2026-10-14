@@ -1,5 +1,6 @@
-/* Page shell: palette tokens, the full-viewport 3D canvas, the impact flash and the fatal-error overlay.
-   The HUD, toasts, banners, screens and shop add their rules in later tasks. */
+/* Page shell: palette tokens, the full-viewport 3D canvas, the impact flash, the HUD (resources bar, mission
+   line, toasts and banners) and the fatal-error overlay. The screens and the shop add their rules in later
+   tasks. */
 
 :root {
   --bg: #0b1020;
@@ -44,6 +45,364 @@ html, body {
   transition: opacity 250ms ease-out;
 }
 #flash.on { opacity: 1; transition: none; }
+
+/* --- The HUD (js/ui/hud.js) ---
+   The resources bar and the mission line under it sit on the wall band above the window. The camera keeps that
+   band at a fixed share of the view's height (the top 14% at 16:10 and wider, more on narrower screens), so the
+   HUD's sizes follow the viewport height. Its panels are smoked glass with corners cut like the letters of the
+   display face, and the bar's lower edge has the console's hazard yellow. Nothing in the HUD takes the pointer:
+   every click reaches the room. */
+
+#app {
+  --hud-top: clamp(6px, 1.1vh, 14px);
+  --hud-height: clamp(54px, 8.2vh, 92px);
+  --hud-num: clamp(23px, 3.9vh, 42px); /* the bar's numbers */
+  --hud-cut: clamp(6px, .9vh, 11px); /* how far a panel's corners are cut */
+  --glass: linear-gradient(180deg, rgba(22, 34, 56, .84), rgba(9, 15, 28, .78));
+  --glass-line: rgba(150, 196, 255, .3);
+  --stripe: #ffc933; /* the console's hazard stripe */
+}
+
+#hud, #mission-line, #toasts, #banner {
+  pointer-events: none;
+  user-select: none;
+}
+
+#hud, #mission-line, .toast {
+  --cut: var(--hud-cut);
+  background: var(--glass);
+  backdrop-filter: blur(8px) saturate(1.25);
+  clip-path: polygon(var(--cut) 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% calc(100% - var(--cut)),
+    calc(100% - var(--cut)) 100%, var(--cut) 100%, 0 calc(100% - var(--cut)), 0 var(--cut));
+}
+
+/* The bar: six cells side by side, a small label over a large number, apart by thin rules. */
+#hud {
+  position: absolute;
+  top: var(--hud-top);
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(calc(100% - 24px), 172vh);
+  height: var(--hud-height);
+  display: flex;
+  padding: 0 calc(var(--hud-cut) * .6);
+  box-shadow: inset 0 1px 0 var(--glass-line), inset 0 -2px 0 color-mix(in srgb, var(--stripe) 60%, transparent);
+}
+
+.hud-cell {
+  position: relative;
+  flex: 1 1 0;
+  min-width: max-content;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: clamp(3px, .5vh, 6px);
+  padding: 0 clamp(10px, 1.7vh, 20px);
+}
+
+.hud-cell + .hud-cell::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 20%;
+  bottom: 20%;
+  border-left: 1px solid rgba(150, 196, 255, .16);
+}
+
+.hud-label {
+  font: 600 clamp(9px, 1.2vh, 13px)/1 var(--font-ui);
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--muted);
+}
+
+/* Every value row is one number high, shields included, so that the labels line up across the bar. */
+.hud-row {
+  display: flex;
+  align-items: center;
+  gap: .4em;
+  height: 1em;
+  font-size: var(--hud-num);
+  line-height: 1;
+}
+
+.hud-value {
+  display: inline-flex;
+  align-items: baseline;
+  gap: .2em;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--text);
+  transform-origin: 0 60%;
+}
+
+.hud-of {
+  font-size: .52em;
+  font-weight: 600;
+  letter-spacing: .04em;
+  color: var(--muted);
+}
+
+.hud-coins .hud-value { color: var(--gold); text-shadow: 0 0 .45em rgba(255, 209, 102, .35); }
+
+.hud-coin {
+  align-self: center;
+  width: .66em;
+  height: .66em;
+  border-radius: 50%;
+  background: radial-gradient(circle at 36% 32%, #fff4c7 0 12%, var(--gold) 42%, #c98f00 100%);
+  box-shadow: inset 0 0 0 .07em rgba(122, 82, 0, .6), 0 0 .35em rgba(255, 209, 102, .45);
+}
+
+.hud-ammo .hud-value { color: var(--teal); text-shadow: 0 0 .45em rgba(42, 209, 176, .35); }
+
+.hud-gauge {
+  flex: 1 1 auto;
+  min-width: 2.6em;
+  height: .2em;
+  background: rgba(42, 209, 176, .16);
+  box-shadow: inset 0 0 0 1px rgba(42, 209, 176, .3);
+}
+
+#hud-ammo-bar {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: var(--teal);
+  box-shadow: 0 0 .3em rgba(42, 209, 176, .7);
+  transition: width .25s ease-out;
+}
+
+.hud-lives .hud-value { align-items: center; gap: .1em; }
+
+.shield { flex: none; width: .6em; height: .7em; overflow: visible; }
+.shield path { stroke-width: 1.6; stroke-linejoin: round; }
+.shield.on { filter: drop-shadow(0 0 .14em rgba(255, 75, 75, .7)); }
+.shield.on path { fill: var(--red); stroke: #ff9a9a; }
+.shield.dim path { fill: rgba(255, 75, 75, .15); stroke: rgba(255, 110, 110, .55); }
+.shield.slot path { fill: none; stroke: rgba(184, 194, 208, .3); }
+
+.hud-round .hud-of { text-transform: uppercase; color: var(--text); opacity: .8; }
+
+.hud-sky { align-self: center; font-size: .66em; font-weight: 400; color: var(--amber); }
+.hud-clock.night .hud-sky { color: #c9dcff; }
+
+/* A low resource: the cell pulses red and its label says so. */
+.hud-cell.low { animation: hud-low .9s ease-in-out infinite alternate; }
+.hud-cell.low .hud-value { color: var(--red); text-shadow: 0 0 .45em rgba(255, 75, 75, .6); }
+.hud-cell.low .hud-label { color: #ffc2c2; }
+.hud-cell.low .hud-label::after {
+  content: 'Low';
+  margin-left: .6em;
+  padding: .15em .45em;
+  font-weight: 700;
+  color: #fff;
+  background: var(--red);
+}
+.hud-ammo.low .hud-gauge { background: rgba(255, 75, 75, .18); box-shadow: inset 0 0 0 1px rgba(255, 75, 75, .45); }
+.hud-ammo.low #hud-ammo-bar { background: var(--red); box-shadow: 0 0 .3em rgba(255, 75, 75, .8); }
+
+@keyframes hud-low {
+  from { background-color: rgba(255, 75, 75, .04); }
+  to { background-color: rgba(255, 75, 75, .3); }
+}
+
+/* A value that changed. */
+.hud-cell.pop .hud-value { animation: hud-pop .3s ease-out; }
+
+@keyframes hud-pop {
+  35% { transform: scale(1.18); filter: brightness(1.6); }
+}
+
+/* The mission line: a tab hanging from the middle of the bar. It is at least as wide as the wall sign's lettering
+   behind it, which would otherwise peek out half covered. The missions give way (…) before the selected track
+   does. */
+#mission-line {
+  --cut: calc(var(--hud-cut) * .8);
+  position: absolute;
+  top: calc(var(--hud-top) + var(--hud-height));
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  justify-content: center;
+  min-width: min(42vh, calc(100% - 32px));
+  max-width: min(calc(100% - 32px), 150vh);
+  padding: clamp(4px, .6vh, 8px) clamp(14px, 2vh, 22px);
+  font: 500 clamp(12px, 1.65vh, 17px)/1.25 var(--font-ui);
+  font-variant-numeric: tabular-nums;
+  white-space: pre;
+  color: var(--text);
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - var(--cut)), calc(100% - var(--cut)) 100%, var(--cut) 100%,
+    0 calc(100% - var(--cut)));
+}
+
+#mission-line.empty { visibility: hidden; }
+
+.ml-missions { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.ml-track { flex: none; color: var(--muted); }
+.ml-progress, .ml-id, .ml-time { font-family: var(--font-display); font-weight: 700; }
+.ml-progress { color: var(--gold); }
+.ml-mission.done, .ml-mission.done .ml-progress { color: var(--teal); }
+.ml-sep { color: var(--muted); }
+.ml-id, .ml-time { color: var(--text); }
+.ml-zone { color: #c5ccd6; }
+.ml-zone.hostile { font-weight: 600; color: #ff9d9d; }
+
+/* Toasts: a stack at the bottom centre, newest at the bottom, each led by a glyph in its kind's colour. */
+#toasts {
+  position: absolute;
+  left: 50%;
+  bottom: clamp(10px, 2.4vh, 26px);
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: min(calc(100% - 32px), 640px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: clamp(4px, .6vh, 7px);
+}
+
+.toast {
+  --cut: 7px;
+  --tone: var(--blue);
+  display: flex;
+  align-items: center;
+  gap: .7em;
+  max-width: 100%;
+  padding: .5em 1.15em .5em .75em;
+  font: 500 clamp(13px, 1.6vh, 16px)/1.35 var(--font-ui);
+  color: var(--text);
+  box-shadow: inset 0 1px 0 var(--glass-line);
+  animation: toast-in .22s ease-out;
+  transition: opacity .35s ease-in, transform .35s ease-in;
+}
+
+.toast::before {
+  content: 'i';
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 1.35em;
+  height: 1.35em;
+  font: 700 .85em/1 var(--font-display);
+  color: var(--bg);
+  background: var(--tone);
+}
+
+.toast-warn { --tone: var(--amber); }
+.toast-warn::before { content: '!'; }
+.toast-good { --tone: var(--teal); }
+.toast-good::before { content: '✓'; }
+.toast.bump { animation: toast-bump .25s ease-out; }
+.toast.leaving { opacity: 0; transform: translateY(.4em); }
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(.6em); }
+}
+
+@keyframes toast-bump {
+  40% { transform: scale(1.05); filter: brightness(1.35); }
+}
+
+/* Banners: a band across the window, ROUND n with its phase and waves, or a small WAVE w / c. */
+#banner {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 33vh;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.1vh;
+  padding: 2.2vh 16px 2.4vh;
+  text-align: center;
+  background: linear-gradient(90deg, transparent, rgba(8, 14, 27, .8) 25%, rgba(8, 14, 27, .8) 75%, transparent);
+  transition: opacity .35s ease-in;
+}
+
+#banner::before, #banner::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255, 209, 102, .75) 30%, rgba(255, 209, 102, .75) 70%,
+    transparent);
+}
+#banner::before { top: 0; }
+#banner::after { bottom: 0; }
+
+/* The trailing letter-spacing is taken back with a negative margin, so that the word stays centred. */
+.banner-title {
+  margin-right: -.16em;
+  font: 700 clamp(40px, 8.8vh, 100px)/1 var(--font-display);
+  letter-spacing: .16em;
+  color: var(--text);
+  text-shadow: 0 0 .35em rgba(255, 209, 102, .4);
+}
+
+.banner-sub {
+  margin-right: -.34em;
+  font: 600 clamp(13px, 2.1vh, 24px)/1 var(--font-display);
+  letter-spacing: .34em;
+  text-transform: uppercase;
+  color: var(--gold);
+}
+
+#banner.small {
+  padding: 1.2vh 16px;
+  background: linear-gradient(90deg, transparent, rgba(8, 14, 27, .7) 38%, rgba(8, 14, 27, .7) 62%, transparent);
+}
+#banner.small::before, #banner.small::after {
+  background: linear-gradient(90deg, transparent, rgba(255, 209, 102, .55) 40%, rgba(255, 209, 102, .55) 60%,
+    transparent);
+}
+#banner.small .banner-title {
+  margin-right: -.3em;
+  font-size: clamp(20px, 3.6vh, 40px);
+  letter-spacing: .3em;
+}
+
+#banner.on { animation: banner-in .32s cubic-bezier(.2, .8, .2, 1); }
+#banner.on .banner-title { animation: banner-track .5s cubic-bezier(.2, .8, .2, 1); }
+#banner.leaving { opacity: 0; }
+
+@keyframes banner-in {
+  from { opacity: 0; transform: translateY(-50%) scaleY(.2); }
+}
+
+@keyframes banner-track {
+  from { opacity: 0; letter-spacing: .5em; margin-right: -.5em; }
+}
+
+/* Reduced motion (the system's setting, or the game's: hud.js puts .reduce-motion on #app): a low cell stays red
+   instead of pulsing, a changed value brightens without growing, toasts and banners only fade. */
+@media (prefers-reduced-motion: reduce) {
+  .hud-cell.low { animation: none; background-color: rgba(255, 75, 75, .22); }
+  .hud-cell.pop .hud-value { animation-name: hud-brighten; }
+  .toast, .toast.bump, #banner.on, #banner.on .banner-title { animation-name: fade-in; }
+  .toast.leaving { transform: none; }
+  #hud-ammo-bar { transition: none; }
+}
+.reduce-motion .hud-cell.low { animation: none; background-color: rgba(255, 75, 75, .22); }
+.reduce-motion .hud-cell.pop .hud-value { animation-name: hud-brighten; }
+.reduce-motion .toast, .reduce-motion .toast.bump, .reduce-motion #banner.on, .reduce-motion #banner.on .banner-title {
+  animation-name: fade-in;
+}
+.reduce-motion .toast.leaving { transform: none; }
+.reduce-motion #hud-ammo-bar { transition: none; }
+
+@keyframes hud-brighten {
+  35% { filter: brightness(1.6); }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+}
 
 #fatal {
   position: absolute;

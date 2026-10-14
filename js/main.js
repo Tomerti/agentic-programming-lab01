@@ -1,7 +1,8 @@
 // Boots the game and runs the frame loop: the scene, the world outside under the day/night lighting, the
-// control room with its monitors and console controls, the game session that they show and drive, and the
-// rockets, interceptors, explosions, shakes and siren that show its events. The campaign starts at once for
-// now. Later tasks bring the HUD, the screens and audio.
+// control room with its monitors and console controls, the game session that they show and drive, the
+// rockets, interceptors, explosions, shakes and siren that show its events, and the 2D HUD over the view (the
+// resources bar, the mission line, toasts and banners). The campaign starts at once for now. Later tasks
+// bring the screens and audio.
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { TIMING, WORLD } from './config.js';
@@ -17,6 +18,7 @@ import { buildOutside } from './scene/outside.js';
 import { createProjectiles } from './scene/projectiles.js';
 import { buildRoom } from './scene/room.js';
 import { createScene } from './scene/scene.js';
+import { createHud } from './ui/hud.js';
 
 const MAX_DT = 0.1; // seconds: a hidden tab or a long frame must not jump the clock
 // The window's centre, world (0, 1.9, −2.6), in the outside group's coordinates, which the session's positions use.
@@ -118,6 +120,10 @@ const reactions = {
 };
 for (const [type, react] of Object.entries(reactions)) bus.on(type, react);
 
+// The HUD shows itself when a round starts and hides on game over and victory. The low-resource warning has
+// no sound until the audio arrives (Task 16).
+const hud = createHud({ root: document.getElementById('app'), bus, session, settings, onLowResource: () => {} });
+
 // Presses a control the way a click on it does: points at it, picks what is under the pointer and clicks.
 // True when the click hit something. The pick uses the control's own position even when it is off screen,
 // where the scene's pointer stops at the edge.
@@ -130,7 +136,7 @@ function clickControl(name) {
 }
 
 Object.assign(game, {
-  scene, outside, room, monitors, session, controls, bus, projectiles, effects, debug: { clickControl },
+  scene, outside, room, monitors, session, controls, bus, projectiles, effects, hud, debug: { clickControl },
 });
 
 const canvas = scene.renderer.domElement;
@@ -162,6 +168,7 @@ function frame(now) {
   room.update(dt);
   controls.update(dt, scene.pointer);
   monitors.update(dt);
+  hud.update(dt);
   outside.applyLighting(lightingFor(hour), scene);
   outside.update(dt);
   effects.update(dt);
