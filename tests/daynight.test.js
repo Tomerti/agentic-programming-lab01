@@ -1,0 +1,17 @@
+import { test } from 'node:test'; import assert from 'node:assert/strict';
+import { lightingFor, advanceClock, startHourFor, phaseName, formatClock } from '../js/game/daynight.js';
+test('keyframe hours return keyframe values exactly', () => { const n = lightingFor(12); assert.equal(n.sunIntensity, 2.4); assert.equal(n.starAlpha, 0); assert.deepEqual(n.skyTop, [0.25, 0.56, 0.94]); });
+test('interpolates between keyframes', () => { const h = lightingFor(9.5); assert.ok(h.sunIntensity > 1.6 && h.sunIntensity < 2.4); assert.ok(h.windowsOn > 0 && h.windowsOn < 0.3); });
+test('continuous across midnight', () => { const a = lightingFor(23.999), b = lightingFor(0); assert.ok(Math.abs(a.sunIntensity - b.sunIntensity) < 0.01); });
+test('sun azimuth 0 at 06:00 and pi at 18:00', () => { assert.ok(Math.abs(lightingFor(6).sunAzimuth) < 1e-9); assert.ok(Math.abs(lightingFor(18).sunAzimuth - Math.PI) < 1e-9); });
+test('advanceClock wraps at 24 and uses 0.04 h/s', () => { assert.ok(Math.abs(advanceClock(10, 1) - 10.04) < 1e-9); assert.ok(advanceClock(23.99, 1) < 1); });
+test('startHourFor rotates 6 h per round from 10:00', () => { assert.equal(startHourFor(1), 10); assert.equal(startHourFor(2), 16); assert.equal(startHourFor(3), 22); assert.equal(startHourFor(4), 4); assert.equal(startHourFor(10), 16); });
+test('phase names and clock format', () => { assert.equal(phaseName(2), 'night'); assert.equal(phaseName(6), 'dawn'); assert.equal(phaseName(12), 'day'); assert.equal(phaseName(18), 'dusk'); assert.equal(formatClock(9.5), '09:30'); });
+test('lightingFor returns exactly the documented fields', () => { assert.deepEqual(Object.keys(lightingFor(3)).sort(), ['hemiGround', 'hemiSky', 'roomLight', 'skyHorizon', 'skyTop', 'starAlpha', 'sunAltitude', 'sunAzimuth', 'sunColor', 'sunIntensity', 'windowsOn']); });
+test('colours interpolate component-wise', () => { const mid = lightingFor(9.5).skyTop; [0.24, 0.465, 0.78].forEach((v, i) => assert.ok(Math.abs(mid[i] - v) < 1e-9, `component ${i}: ${mid[i]}`)); });
+test('results are fresh copies: editing one does not leak into the next', () => { const a = lightingFor(12); a.skyTop[0] = 99; assert.equal(lightingFor(12).skyTop[0], 0.25); });
+test('lightingFor wraps hours outside 0..24', () => { assert.deepEqual(lightingFor(24), lightingFor(0)); assert.deepEqual(lightingFor(25), lightingFor(1)); assert.deepEqual(lightingFor(-1), lightingFor(23)); });
+test('advanceClock takes an explicit rate and always stays in [0, 24)', () => { assert.ok(Math.abs(advanceClock(23, 100, 0.1) - 9) < 1e-9); for (const h of [0, 12, 23.999, 24, -1]) { const r = advanceClock(h, 0.5); assert.ok(r >= 0 && r < 24, `from ${h}: ${r}`); } });
+test('startHourFor wraps for endless rounds and takes explicit settings', () => { assert.equal(startHourFor(11), 22); assert.equal(startHourFor(3, { startHour: 3, hoursPerRound: 5 }), 13); });
+test('a phase starts exactly on its boundary hour', () => { assert.deepEqual([0, 4.99, 5, 8.99, 9, 16.99, 17, 20.99, 21, 23.99, 24].map(phaseName), ['night', 'night', 'dawn', 'dawn', 'day', 'day', 'dusk', 'dusk', 'night', 'night', 'night']); });
+test('formatClock zero-pads, floors the minutes and wraps 24:00', () => { assert.equal(formatClock(0), '00:00'); assert.equal(formatClock(5.25), '05:15'); assert.equal(formatClock(10.04), '10:02'); assert.equal(formatClock(23.999), '23:59'); assert.equal(formatClock(24), '00:00'); });
