@@ -18,7 +18,9 @@
 // from navigation: the expression is polled every 250 ms (an exception, e.g. while the page
 // is still loading, counts as not ready) until it is truthy or the budget is spent; then
 // the actions run, and the screenshot is taken when the rest of the budget has passed, at
-// once if the actions outlasted it. The report then also holds
+// once if the actions outlasted it. --ready takes a synchronous boolean expression: it is
+// read as !!(expression), so any truthy value counts, an object too, and a Promise is not
+// awaited (it counts as truthy at once). The report then also holds
 //   ready: { expression, met, ms }   (whether it became truthy, and when, in ms after navigation)
 // An --eval may return a Promise, which is awaited: one that settles on a page event, with
 // a short --wait, takes the screenshot right after that event.
@@ -119,7 +121,7 @@ const send = (method, params = {}) => new Promise((res, rej) => { const i = ++id
 async function waitUntilReady(expression, deadline) {
   for (;;) {
     try {
-      const r = await send('Runtime.evaluate', { expression, returnByValue: true });
+      const r = await send('Runtime.evaluate', { expression: `!!(${expression}\n)`, returnByValue: true });
       if (!r.exceptionDetails && r.result.value) return true;
     } catch {}
     if (Date.now() + READY_POLL > deadline) return false;
