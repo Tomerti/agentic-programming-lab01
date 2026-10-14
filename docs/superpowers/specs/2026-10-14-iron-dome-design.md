@@ -330,7 +330,7 @@ eased). Three monitors: **RESOURCES** (left; coins, ammo bar, lives lamps, round
 clock), **RADAR** (centre, large; rings, sweep, blips coloured red = populated, grey =
 open, hollow = decoy, cyan = interceptor with a line to its target, selected blip ringed,
 jamming static), **THREATS + MISSION** (right; rows with id, type, zone, time-to-impact;
-lower half: mission text with progress and the last 6 log lines). A lamp strip on the
+lower area, missions on the left and the last up to 6 log lines on the right). A lamp strip on the
 console shows lives: one lamp per `maxLives`, lit per life; a lost life flashes red. The
 siren beacon on the wall spins on alerts and populated impacts. The sign reads
 "IRON DOME · JERUSALEM BATTERY".
