@@ -2,7 +2,7 @@
 // Headless-Chrome harness for visual checks, with no dependencies (Node ≥ 22).
 //
 //   node scripts/snap.mjs <url> [--out shot.png] [--wait 4000] [--width 1440] [--height 900]
-//                         [--eval "<js expression>"]... [--click "<css selector>"]...
+//                         [--ready "<js expression>"] [--eval "<js expression>"]... [--click "<css selector>"]...
 //
 // Loads the page in headless Chrome over the DevTools protocol, collects console
 // messages and uncaught exceptions, runs the optional --click / --eval actions in order
@@ -11,6 +11,17 @@
 // Exit code is 1 when any error was logged or an exception was thrown, so it can gate
 // a verification step. Every run uses a fresh Chrome profile, removed afterwards, with the
 // HTTP cache disabled, so the page always loads the files as they are on disk.
+//
+// Timing. Without --ready, the actions run 1.5 s after navigation (or --wait ms, if less)
+// and the screenshot is taken --wait ms after navigation plus the time the actions took
+// (each action is followed by a 300 ms pause). With --ready, --wait is one budget, counted
+// from navigation: the expression is polled every 250 ms (an exception, e.g. while the page
+// is still loading, counts as not ready) until it is truthy or the budget is spent; then
+// the actions run, and the screenshot is taken when the rest of the budget has passed, at
+// once if the actions outlasted it. The report then also holds
+//   ready: { expression, met, ms }   (whether it became truthy, and when, in ms after navigation)
+// An --eval may return a Promise, which is awaited: one that settles on a page event, with
+// a short --wait, takes the screenshot right after that event.
 
 import { spawn } from 'node:child_process';
 import { writeFileSync, existsSync, mkdtempSync, rmSync } from 'node:fs';
@@ -20,11 +31,13 @@ import { setTimeout as sleep } from 'node:timers/promises';
 
 const args = process.argv.slice(2);
 const url = args.find(a => !a.startsWith('--'));
-if (!url) { console.error('usage: node scripts/snap.mjs <url> [--out f.png] [--wait ms] [--eval js]... [--click sel]...'); process.exit(2); }
+if (!url) { console.error('usage: node scripts/snap.mjs <url> [--out f.png] [--wait ms] [--ready js] [--eval js]... [--click sel]...'); process.exit(2); }
 const opt = (name, dflt) => { const i = args.indexOf('--' + name); return i >= 0 ? args[i + 1] : dflt; };
 const many = name => args.flatMap((a, i) => a === '--' + name ? [args[i + 1]] : []);
 const out = opt('out', 'snap.png');
 const wait = Number(opt('wait', 4000));
+const ready = opt('ready', null);
+const READY_POLL = 250; // ms between two checks of the --ready expression
 const width = Number(opt('width', 1440)), height = Number(opt('height', 900));
 const actions = args.flatMap((a, i) => (a === '--eval' || a === '--click') ? [{ kind: a.slice(2), value: args[i + 1] }] : []);
 
@@ -101,6 +114,19 @@ function connect(wsUrl) {
 let ws;
 const send = (method, params = {}) => new Promise((res, rej) => { const i = ++id; pending.set(i, { res, rej }); ws.send(JSON.stringify({ id: i, method, params })); });
 
+// Polls the --ready expression until it is truthy (true) or `deadline` (a Date.now() time) passes (false).
+// An exception, or a page between two documents, counts as not ready yet.
+async function waitUntilReady(expression, deadline) {
+  for (;;) {
+    try {
+      const r = await send('Runtime.evaluate', { expression, returnByValue: true });
+      if (!r.exceptionDetails && r.result.value) return true;
+    } catch {}
+    if (Date.now() + READY_POLL > deadline) return false;
+    await sleep(READY_POLL);
+  }
+}
+
 try {
   await waitForDevtools();
   const target = await (await fetch(`http://127.0.0.1:${port}/json/new?about:blank`, { method: 'PUT' })).json();
@@ -110,7 +136,11 @@ try {
   await send('Log.enable'); await send('Page.enable');
   await send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: false });
   await send('Page.navigate', { url });
-  await sleep(Math.min(wait, 1500));
+  const navigated = Date.now();
+  if (ready !== null) {
+    const met = await waitUntilReady(ready, navigated + wait);
+    report.ready = { expression: ready, met, ms: Date.now() - navigated };
+  } else await sleep(Math.min(wait, 1500));
   for (const a of actions) {
     const expr = a.kind === 'click'
       ? `(() => { const el = document.querySelector(${JSON.stringify(a.value)}); if (!el) return 'NOT FOUND: ' + ${JSON.stringify(a.value)}; el.click(); return 'clicked ' + ${JSON.stringify(a.value)}; })()`
@@ -120,7 +150,7 @@ try {
     if (r.exceptionDetails) report.errors.push(`eval failed: ${a.value}`);
     await sleep(300);
   }
-  await sleep(Math.max(0, wait - 1500));
+  await sleep(Math.max(0, ready !== null ? navigated + wait - Date.now() : wait - 1500));
   const shot = await send('Page.captureScreenshot', { format: 'png' });
   writeFileSync(out, Buffer.from(shot.data, 'base64'));
 } catch (e) {
