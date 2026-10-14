@@ -127,6 +127,10 @@ test('engage refuses in order: hold, jammed, cooldown, coins, ammo, noTarget', (
   assert.deepEqual(session.engage(), { ok: true });
   state.fireCooldown = 0;
   refuses('alreadyEngaged'); // one interceptor in flight and one hit needed
+  state.selectedId = null; // nothing selected: the most urgent track is the one in flight
+  const selections = payloads(events, 'threat:selected').length;
+  refuses('alreadyEngaged');
+  assert.deepEqual([state.selectedId, payloads(events, 'threat:selected').length], [null, selections], 'a refusal selects nothing');
 });
 
 test('engage spends 80 and one interceptor and launches at the most urgent populated track', () => {
@@ -466,9 +470,11 @@ test('round 10 victory computes a rating and records endlessStart; startEndless 
   assert.deepEqual([records.endlessStart.coins, records.endlessStart.ammo, records.endlessStart.upgrades], [state.coins, state.ammo, { seekers: 2 }]);
   assert.equal(session.continueFromSummary(), false, 'no shop after the finale');
   assert.equal(state.lives, 4);
-  const coins = state.coins;
+  const [coins, ammo] = [state.coins, state.ammo];
+  assert.ok(ammo < 200, 'the finale used interceptors');
   session.startEndless();
   assert.deepEqual([state.mode, state.round, state.phase, state.coins, state.upgrades], ['endless', ROUNDS.length + 1, 'wave', coins, { seekers: 2 }]);
+  assert.deepEqual([state.ammo, state.ammoCapacity], [ammo, 200], 'the launcher as the campaign left it');
   assert.deepEqual([state.maxLives, state.lives], [7, 7], 'every life, up to the shelters bought');
   assert.deepEqual([state.score, state.stats.total], [0, emptyStats()]);
   assert.equal(ratingFor({ impactsPopulated: 0, shotsWasted: 0 }), 'S');
@@ -478,8 +484,9 @@ test('round 10 victory computes a rating and records endlessStart; startEndless 
   assert.equal(ratingFor({ impactsPopulated: 9 }), 'C');
 });
 
-// An auto-player for the balance check: it fires at whatever engage() picks, clears jamming at once, and
-// between rounds only restocks. Returns the state it stopped in.
+// An auto-player for the balance check: it fires at whatever engage() picks and clears jamming at once; between
+// rounds it buys a level of Extra launcher tubes when it can, restocks and moves on. With `act` false it does
+// nothing but move on. Returns the state it stopped in.
 const autoPlay = (seed, act) => {
   const session = createSession({ rng: createRng(seed), persistence: createPersistence(memStorage()), bus: createBus() });
   const { state } = session;
@@ -488,22 +495,20 @@ const autoPlay = (seed, act) => {
     if (act && state.jammed) session.resetRadar();
     if (act && state.phase === 'wave') session.engage();
     if (state.phase === 'summary') session.continueFromSummary();
-    if (state.phase === 'shop') { session.restock(); session.leaveShop(); }
+    if (state.phase === 'shop') {
+      if (act) session.buy('capacity'); // refused once maxed or unaffordable
+      session.restock();
+      session.leaveShop();
+    }
     session.update(DT);
   }
   return state;
 };
 
-// Pending a balance ruling (see .superpowers/sdd/2026-10-14-iron-dome/task-9-report.md): this player never buys
-// launcher capacity, runs dry in round 7 or 8 (20 interceptors cannot cover those rounds) and loses with coins to
-// spare. The assertions are the brief's; `todo` keeps the result visible without failing the suite.
-test('balance: an auto-player that engages every populated track wins the campaign', { todo: 'pending the balance ruling for Task 9' }, () => {
+test('balance: an auto-player that engages every populated track wins the campaign, and doing nothing loses', () => {
   const player = autoPlay(1, true);
   assert.equal(player.phase, 'victory', `stopped in round ${player.round} with ${player.lives} lives and ${player.coins} coins`);
   assert.ok(player.lives > 0);
-});
-
-test('balance: doing nothing loses before round 4', () => {
   const idle = autoPlay(1, false);
   assert.equal(idle.phase, 'gameover');
   assert.ok(idle.round < 4);
@@ -514,7 +519,12 @@ test('balance: doing nothing loses before round 4', () => {
 test('round-end missions are paid before the summary is built, and the summary shows them done', () => {
   const { session, state, events } = setup({ config: withRound1({ missions: ['perfectRound'] }) });
   session.startCampaign();
+  const tracker = session.missions;
+  const { onEvent } = tracker;
+  let roundEnds = 0;
+  tracker.onEvent = (type, payload) => { if (type === 'round:end') roundEnds += 1; return onEvent(type, payload); };
   playOut(session);
+  assert.equal(roundEnds, 1, 'the missions judge the round once');
   const types = typesOf(events);
   assert.ok(types.indexOf('mission:complete') < types.indexOf('round:end'));
   assert.deepEqual(payloads(events, 'mission:complete'), [{ id: 'perfectRound', reward: 400 }]);
@@ -614,6 +624,45 @@ test('decoys count as populated for the most urgent track until the Signature an
   assert.deepEqual([state.stats.round.shotsWasted, state.stats.wave.shotsWasted], [1, 1], 'a shot at a decoy is wasted');
 });
 
+test('ALERT treats an unrevealed decoy like a rocket: it pays 40 and sounds in time', () => {
+  const { session, state, events } = setup();
+  session.startCampaign();
+  const decoy = craft({ id: 1, type: 'decoy', zone: 'ramot', left: 4 });
+  state.threats.push(decoy, craft({ id: 2, zone: 'talpiot', left: 6 }));
+  assert.deepEqual(session.soundAlert(), { ok: true }, 'nothing selected: the most urgent track, the decoy');
+  assert.deepEqual(events.slice(-2), [
+    ['alert:sounded', { zone: 'ramot', zoneName: 'Ramot', inTime: true, threatId: 1 }],
+    ['coins:changed', { coins: 1040, delta: 40, reason: 'alert' }],
+  ]);
+  assert.deepEqual([decoy.alerted, state.stats.round.alerts, state.score, state.log[0]], [true, 1, 40, 'ALERT · RAMOT']);
+});
+
+test('ALERT refuses a decoy that the Signature analyzer reveals', () => {
+  const { session, state, events } = setup();
+  session.startCampaign();
+  state.upgrades.analyzer = 1;
+  const decoy = craft({ id: 1, type: 'decoy', zone: 'ramot', left: 4 });
+  state.threats.push(decoy);
+  assert.equal(session.selectTrack(1), true);
+  assert.deepEqual(session.soundAlert(), { ok: false, reason: 'noTarget' });
+  assert.deepEqual(events.at(-1), ['alert:sounded', { inTime: false }]);
+  assert.deepEqual([decoy.alerted, state.coins, state.stats.round.alerts], [false, 1000, 0]);
+});
+
+test('Auto-alert alerts an unrevealed decoy on detection, and leaves a revealed one alone', () => {
+  for (const analyzer of [0, 1]) {
+    const { session, state, events } = setup();
+    session.startCampaign();
+    Object.assign(state.upgrades, { autoAlert: 1, analyzer });
+    const decoy = craft({ id: 1, type: 'decoy', zone: 'ramot', detected: false }); // just launched, out of range
+    state.threats.push(decoy);
+    stepUntil(session, () => decoy.detected);
+    const alerts = payloads(events, 'alert:sounded').filter(p => p.threatId === 1);
+    assert.deepEqual(alerts, analyzer ? [] : [{ zone: 'ramot', zoneName: 'Ramot', inTime: true, threatId: 1 }], `analyzer ${analyzer}`);
+    assert.equal(decoy.alerted, !analyzer);
+  }
+});
+
 test('callHQ names the first open mission and reports a UAV on radar', () => {
   const { session, state, events } = setup();
   assert.equal(session.callHQ(), null, 'no line outside play');
@@ -662,6 +711,32 @@ test('pause freezes the game, resume returns to the phase it left; HOLD and RESE
   assert.deepEqual([state.phase, state.wave, state.stats.wave.holdAllWave], ['wave', 2, true], 'HOLD set in the breather covers the next wave');
   session.toggleHold();
   assert.equal(state.stats.wave.holdAllWave, false, 'released during the wave');
+});
+
+test('a new round or game switches HOLD FIRE and jamming off and says so, without completing clearJam', () => {
+  // Round 2 here carries clearJam: a jamming switched off at a round's start or end would complete it if it counted.
+  const config = { ...CONFIG, ROUNDS: [ROUNDS[0], { ...ROUNDS[1], missions: ['clearJam'] }, ...ROUNDS.slice(2)] };
+  const { session, state, events } = setup({ config });
+  const switches = from => events.slice(from).filter(([type]) => type === 'hold:changed' || type === 'hazard:jamming');
+  const OFF = [['hold:changed', { on: false }], ['hazard:jamming', { on: false }]];
+  session.startCampaign();
+  playOut(session);
+  session.continueFromSummary();
+  Object.assign(state, { hold: true, jammed: true, jamElapsed: 1 }); // HOLD left on in the last breather, a jamming not over
+  let from = events.length;
+  session.leaveShop();
+  assert.deepEqual(switches(from), OFF);
+  assert.ok(typesOf(events.slice(from)).indexOf('hazard:jamming') < typesOf(events.slice(from)).indexOf('round:start'));
+  assert.deepEqual([state.round, state.hold, state.jammed], [2, false, false]);
+  session.toggleHold(); // in round 2, with clearJam
+  state.jammed = true;
+  from = events.length;
+  session.startCampaign();
+  assert.deepEqual(switches(from), OFF);
+  assert.deepEqual(payloads(events, 'mission:complete'), [], 'no clearJam for a jamming nobody cleared');
+  from = events.length;
+  session.startCampaign();
+  assert.deepEqual(switches(from), [], 'nothing to say when both were off');
 });
 
 test('retryRound restores the round-start checkpoint; an Endless or missing checkpoint starts a fresh campaign', () => {

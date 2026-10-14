@@ -80,10 +80,11 @@ export function createSession({ config = CONFIG, rng, persistence, bus }) {
 
   // --- Events, missions, tutorial ---
 
-  // Sends an event to the bus and to the round's missions; it may also show a tutorial toast.
-  function emit(type, payload) {
+  // Sends an event to the bus and to the round's missions (unless `toMissions` is false: the one event that the
+  // missions get ahead of the bus, round:end, see endRound); it may also show a tutorial toast.
+  function emit(type, payload, { toMissions = true } = {}) {
     bus.emit(type, payload);
-    feedMissions(type, payload);
+    if (toMissions) feedMissions(type, payload);
     showTutorial(type);
   }
 
@@ -140,10 +141,13 @@ export function createSession({ config = CONFIG, rng, persistence, bus }) {
   const findThreat = id => state.threats.find(t => t.id === id) ?? null;
   const selectedTrack = () => { const threat = findThreat(state.selectedId); return isTrack(threat) ? threat : null; };
   const revealsDecoys = () => economy.itemLevel('analyzer') > 0;
+  // Whether a track counts as populated to the player (spec §4): a populated threat, or a decoy that the Signature
+  // analyzer has not revealed. Selection, ALERT and Auto-alert all go by this, so nothing gives a decoy away.
+  const countsAsPopulated = threat => threat.populated || (threat.decoy && !revealsDecoys());
 
-  // Spec §4: the most urgent track is the detected inbound populated one closest to impact; decoys count as
-  // populated until the Signature analyzer reveals them. Null when there is none.
-  const mostUrgent = () => sortedDetectedThreats(state).find(t => t.populated || (t.decoy && !revealsDecoys())) ?? null;
+  // Spec §4: the most urgent track is the detected inbound one closest to impact that counts as populated. Null when
+  // there is none.
+  const mostUrgent = () => sortedDetectedThreats(state).find(countsAsPopulated) ?? null;
 
   // Endless pays whole points; the fraction waits in scoreCarry.
   function addScore(points) {
@@ -155,7 +159,21 @@ export function createSession({ config = CONFIG, rng, persistence, bus }) {
 
   // --- Games, rounds, waves ---
 
+  // HOLD FIRE and a jamming end with their round (or game), and the views hear of it when they were on. That end of
+  // a jamming carries no `elapsed`: nobody cleared it, so the clearJam mission cannot complete on it.
+  function switchOff() {
+    if (state.hold) {
+      state.hold = false;
+      emit('hold:changed', { on: false });
+    }
+    if (state.jammed) {
+      state.jammed = false;
+      emit('hazard:jamming', { on: false });
+    }
+  }
+
   function newGame(mode) {
+    switchOff();
     Object.assign(state, freshState(), { mode });
     schedule = null;
     tracker = null;
@@ -200,9 +218,10 @@ export function createSession({ config = CONFIG, rng, persistence, bus }) {
     fired = new Set();
     Object.assign(state, {
       round: n, wave: 0, waveCount: schedule.waves.length, clockHour: schedule.startHour, missions: tracker.status(),
-      threats: [], interceptors: [], selectedId: null, hold: false, jammed: false, jamElapsed: 0, fireCooldown: 0,
+      threats: [], interceptors: [], selectedId: null, jamElapsed: 0, fireCooldown: 0,
     });
     state.stats.round = emptyStats();
+    switchOff(); // after state.missions holds the new tracker's status, which its events are compared with
     if (state.mode === 'campaign') persistence.saveCheckpoint(state);
     const { startHour } = schedule;
     emit('round:start', {
@@ -256,7 +275,7 @@ export function createSession({ config = CONFIG, rng, persistence, bus }) {
         endlessStart: checkpointFrom(state),
       });
     }
-    emit('round:end', { summary });
+    emit('round:end', { summary }, { toMissions: false }); // the missions judged the round above, once
     if (victory) emit('campaign:victory', { summary, rating });
   }
 
@@ -353,7 +372,7 @@ export function createSession({ config = CONFIG, rng, persistence, bus }) {
     threat.detected = true;
     log(`TRK-${threat.id} NEW TRACK`);
     emit('threat:detected', { threat });
-    if (economy.itemLevel('autoAlert') > 0 && threat.populated && !threat.alerted) alertFor(threat);
+    if (economy.itemLevel('autoAlert') > 0 && countsAsPopulated(threat) && !threat.alerted) alertFor(threat);
   }
 
   // A decoy burns up, a threat on open ground costs nothing, one on a neighborhood costs a life. True when that
@@ -441,8 +460,9 @@ export function createSession({ config = CONFIG, rng, persistence, bus }) {
     return state.selectedId;
   }
 
-  // Fires one interceptor at the selected track, or with none selected at the most urgent one, which it selects.
-  // { ok: true }, or { ok: false, reason } with the first refusal that holds (spec §6), also emitted.
+  // Fires one interceptor at the selected track, or with none selected at the most urgent one, which it then selects.
+  // { ok: true }, or { ok: false, reason } with the first refusal that holds (spec §6), also emitted; a refusal
+  // changes nothing, the selection included.
   function engage() {
     if (state.phase !== 'wave') return { ok: false, reason: 'phase' };
     const refuse = reason => {
@@ -455,13 +475,10 @@ export function createSession({ config = CONFIG, rng, persistence, bus }) {
     if (state.fireCooldown > 0) return refuse('cooldown');
     if (!economy.canAfford(cost)) return refuse('coins');
     if (state.ammo <= 0) return refuse('ammo');
-    let target = selectedTrack();
-    if (!target) {
-      target = mostUrgent();
-      if (!target) return refuse('noTarget');
-      selectTrack(target.id);
-    }
+    const target = selectedTrack() ?? mostUrgent();
+    if (!target) return refuse('noTarget');
     if (target.engagedBy !== null && target.hitsRemaining <= 1) return refuse('alreadyEngaged');
+    if (state.selectedId !== target.id) selectTrack(target.id);
     economy.spend(cost);
     state.ammo -= 1;
     count('shots');
@@ -483,7 +500,7 @@ export function createSession({ config = CONFIG, rng, persistence, bus }) {
     return { ok: true };
   }
 
-  // Pays the alert for a populated inbound track, once per track.
+  // Pays the alert for an inbound track that counts as populated, once per track.
   function alertFor(threat) {
     threat.alerted = true;
     credit(ECONOMY.alertReward);
@@ -495,11 +512,12 @@ export function createSession({ config = CONFIG, rng, persistence, bus }) {
   }
 
   // Sounds the alert for the selected track, or with none selected the most urgent one. Refused (alert:sounded with
-  // inTime false) when that track is not populated or was alerted already.
+  // inTime false) when that track does not count as populated or was alerted already. An unrevealed decoy is
+  // alerted and paid like a rocket, so ALERT cannot tell them apart.
   function soundAlert() {
     if (state.phase !== 'wave') return { ok: false, reason: 'phase' };
     const target = selectedTrack() ?? mostUrgent();
-    if (!target?.populated || target.alerted) {
+    if (!target || !countsAsPopulated(target) || target.alerted) {
       emit('alert:sounded', { inTime: false });
       return { ok: false, reason: 'noTarget' };
     }
