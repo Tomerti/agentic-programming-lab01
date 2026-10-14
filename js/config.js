@@ -70,6 +70,7 @@ export const ECONOMY = Object.freeze({
   stipendPerRound: 50,
   restockCost: 40, // per interceptor
   ammoCapacity: 20,
+  capacityPerLevel: 10, // ammoCapacity added per Extra launcher tubes level
   startLives: 5,
   maxLives: 5,
   maxLivesCap: 8, // Reinforced shelters raise maxLives up to this

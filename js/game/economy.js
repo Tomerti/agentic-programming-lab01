@@ -1,20 +1,17 @@
 // Economy: what things cost, what they pay and what the shop sells. It works on the session's state record and
 // touches only coins, ammo, ammoCapacity, lives, maxLives and upgrades (an object from item id to level; an id
 // that is missing is level 0). It emits nothing: the session reports changes from the results. The numbers are
-// ECONOMY, SHOP, THREATS and WORLD in config.js, except CAPACITY_PER_LEVEL below.
+// ECONOMY, SHOP, THREATS and WORLD in config.js.
 import { ECONOMY, SHOP, THREATS, WORLD } from '../config.js';
-
-// What a level of Extra launcher tubes adds to the capacity. Only the shop row's text ("Capacity +10") says so,
-// no config table holds the number.
-const CAPACITY_PER_LEVEL = 10;
 
 // An economy over `state`. The state is read on every call and never copied, so the session may change it
 // between calls, even swap in a new upgrades object. `config` is the tables to read; tests pass their own.
 export function createEconomy(state, config = { ECONOMY, SHOP, THREATS, WORLD }) {
   const { ECONOMY, SHOP, THREATS, WORLD } = config; // shadows the imports, which only serve as the default
 
-  // The level of an item: how often it was bought, 0 if never. Restock is not counted (see buy).
-  const itemLevel = id => state.upgrades[id] ?? 0;
+  // The level of an item: how often it was bought, 0 if never. Restock is not counted (see buy). Only the
+  // upgrades' own keys count, so an id such as 'constructor' is level 0.
+  const itemLevel = id => (Object.hasOwn(state.upgrades, id) ? state.upgrades[id] : 0);
 
   // Values the upgrades change.
   const shotCost = () => ECONOMY.shotCost - ECONOMY.shotDiscountPerLevel * itemLevel('cheaper');
@@ -43,12 +40,13 @@ export function createEconomy(state, config = { ECONOMY, SHOP, THREATS, WORLD })
   const restockCost = n => n * ECONOMY.restockCost;
   const missingAmmo = () => state.ammoCapacity - state.ammo;
 
-  // Buys min(n, missing) interceptors: { ok: true, bought }, or { ok: false, reason } where 'full' means none is
-  // missing and 'coins' that the coins do not cover the whole order, in which case nothing is bought.
+  // Buys min(n, missing) interceptors, none for n <= 0: { ok: true, bought }, or { ok: false, reason } where
+  // 'full' means none is missing and 'coins' that the coins do not cover the whole order, in which case
+  // nothing is bought. Ammo is never sold back: the amount is never below 0, and a surplus counts as full.
   const restock = (n = missingAmmo()) => {
     const missing = missingAmmo();
-    if (missing === 0) return { ok: false, reason: 'full' };
-    const bought = Math.min(n, missing);
+    if (missing <= 0) return { ok: false, reason: 'full' };
+    const bought = Math.max(0, Math.min(n, missing));
     if (!spend(restockCost(bought))) return { ok: false, reason: 'coins' };
     state.ammo += bought;
     return { ok: true, bought };
@@ -60,12 +58,12 @@ export function createEconomy(state, config = { ECONOMY, SHOP, THREATS, WORLD })
   const limits = {
     maxLives: () => state.maxLives >= ECONOMY.maxLivesCap && 'maxed',
     life: () => state.lives >= state.maxLives && 'livesFull',
-    restock: () => missingAmmo() === 0 && 'full',
+    restock: () => missingAmmo() <= 0 && 'full',
   };
   const effects = {
     maxLives: () => { state.maxLives += 1; },
     life: () => { state.lives += 1; },
-    capacity: () => { state.ammoCapacity += CAPACITY_PER_LEVEL; },
+    capacity: () => { state.ammoCapacity += ECONOMY.capacityPerLevel; },
   };
 
   const findItem = id => SHOP.find(row => row.id === id);

@@ -17,25 +17,27 @@ const tables = ({ economy = {}, shop = row => row, threats = {}, world = {} } = 
   ECONOMY: { ...ECONOMY, ...economy }, SHOP: SHOP.map(shop), THREATS: { ...THREATS, ...threats }, WORLD: { ...WORLD, ...world },
 });
 
-test('the tables passed in decide the derived values, rewards, stipend and restock price', () => {
+test('the tables passed in decide the derived values, rewards, stipend, restock price and capacity step', () => {
   const config = tables({
     economy: {
       shotCost: 100, shotDiscountPerLevel: 7, hitChance: 0.5, hitChancePerLevel: 0.1, fireCooldown: 2, rapidCooldown: 0.25,
-      stipendBase: 10, stipendPerRound: 3, restockCost: 9,
+      stipendBase: 10, stipendPerRound: 3, restockCost: 9, capacityPerLevel: 7,
     },
     threats: { rocket: { ...THREATS.rocket, reward: 77 } },
     world: { detectionBase: 5, detectionPerLevel: 3 },
   });
-  const { s, e } = setup({ upgrades: { cheaper: 2, seekers: 1, radar: 3, rapid: 1 } }, config); // all different
+  const { s, e } = setup({ upgrades: { cheaper: 2, seekers: 1, radar: 3 } }, config); // three different levels, no rapid
   assert.equal(e.shotCost(), 86);
   assert.ok(near(e.hitChance(), 0.6));
   assert.equal(e.detectionRange(), 14);
-  assert.equal(e.fireCooldown(), 0.25);
+  assert.equal(e.fireCooldown(), 2); // no other upgrade shortens it ...
+  s.upgrades = { rapid: 1 };
+  assert.equal(e.fireCooldown(), 0.25); // ... and Rapid reload alone does
   assert.equal(e.rewardFor('rocket'), 77);
   assert.equal(e.stipend(4), 22);
   assert.equal(e.restockCost(3), 27);
-  s.upgrades = {};
-  assert.equal(e.fireCooldown(), 2);
+  assert.equal(e.buy('capacity').ok, true);
+  assert.equal(s.ammoCapacity, 27);
 });
 
 test('hit chance stops at 1 however many seeker levels there are', () => {
@@ -73,8 +75,8 @@ test('an id the shop does not sell is unknown, for inherited property names too'
     assert.deepEqual(e.canBuy(id), { ok: false, reason: 'unknown' }, id);
     assert.deepEqual(e.buy(id), { ok: false, reason: 'unknown' }, id);
     assert.equal(e.itemCost(id), null, id);
+    assert.equal(e.itemLevel(id), 0, id);
   }
-  assert.equal(e.itemLevel('missiles'), 0);
   assert.deepEqual(s, fresh());
 });
 
@@ -181,6 +183,18 @@ test('restock buys what is asked for, never more than is missing, and all or not
   assert.deepEqual([s.ammo, s.coins], [0, 790]); // not even the 19 that 790 coins would cover
   assert.deepEqual(e.restock(19), { ok: true, bought: 19 });
   assert.deepEqual([s.ammo, s.coins], [19, 30]);
+});
+
+test('restock never sells ammo back: a negative amount buys nothing, and a surplus counts as full', () => {
+  const { s, e } = setup({ ammo: 10 });
+  assert.deepEqual(e.restock(-5), { ok: true, bought: 0 });
+  assert.deepEqual(e.restock(0), { ok: true, bought: 0 });
+  assert.deepEqual([s.ammo, s.coins], [10, 1000]); // no ammo taken, no coins credited
+  s.ammo = 25; // more than the capacity of 20
+  assert.deepEqual(e.restock(), { ok: false, reason: 'full' });
+  assert.deepEqual(e.canBuy('restock'), { ok: false, reason: 'full' });
+  assert.deepEqual(e.buy('restock'), { ok: false, reason: 'full' });
+  assert.deepEqual([s.ammo, s.coins], [25, 1000]);
 });
 
 test('buying restock fills the launcher and reports the number of interceptors as the level', () => {
