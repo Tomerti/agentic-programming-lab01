@@ -9,10 +9,13 @@
 // after the page has loaded, waits, captures a screenshot and prints a JSON report:
 //   { url, errors: [...], console: [...], evals: [...], screenshot }
 // Exit code is 1 when any error was logged or an exception was thrown, so it can gate
-// a verification step.
+// a verification step. Every run uses a fresh Chrome profile, removed afterwards, with the
+// HTTP cache disabled, so the page always loads the files as they are on disk.
 
 import { spawn } from 'node:child_process';
-import { writeFileSync, existsSync } from 'node:fs';
+import { writeFileSync, existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 
 const args = process.argv.slice(2);
@@ -38,14 +41,32 @@ const chrome = CANDIDATES.find(p => existsSync(p));
 if (!chrome) { console.error('No Chrome/Edge found; set CHROME_PATH'); process.exit(2); }
 
 const port = 9222 + Math.floor(Math.random() * 500);
+const profile = mkdtempSync(join(tmpdir(), 'snap-'));
 const proc = spawn(chrome, [
   '--headless=new', '--disable-gpu', '--enable-unsafe-swiftshader', '--use-angle=swiftshader',
   '--no-first-run', '--no-default-browser-check', '--mute-audio', '--autoplay-policy=no-user-gesture-required',
-  `--remote-debugging-port=${port}`, `--window-size=${width},${height}`, '--user-data-dir=' + process.env.TEMP + '/snap-profile-' + port,
+  `--remote-debugging-port=${port}`, `--window-size=${width},${height}`, `--user-data-dir=${profile}`,
   'about:blank',
 ], { stdio: 'ignore' });
-const cleanup = () => { try { proc.kill('SIGKILL'); } catch {} };
+const cleanup = () => {
+  try { proc.kill('SIGKILL'); } catch {}
+  try { rmSync(profile, { recursive: true, force: true }); } catch {}
+};
 process.on('exit', cleanup);
+
+// Kills Chrome and removes its profile. Chrome's helper processes keep the profile open for a moment
+// after the browser process dies (removing it at once fails with EPERM on Windows), so the removal is
+// retried for up to 5 s.
+async function shutdown() {
+  if (proc.exitCode === null && proc.signalCode === null) {
+    const exited = new Promise(resolve => proc.once('exit', resolve));
+    try { proc.kill('SIGKILL'); } catch {}
+    await Promise.race([exited, sleep(3000)]);
+  }
+  for (let attempt = 0; attempt < 20 && existsSync(profile); attempt++) {
+    try { rmSync(profile, { recursive: true, force: true }); } catch { await sleep(250); }
+  }
+}
 
 async function waitForDevtools() {
   for (let i = 0; i < 100; i++) {
@@ -84,7 +105,9 @@ try {
   await waitForDevtools();
   const target = await (await fetch(`http://127.0.0.1:${port}/json/new?about:blank`, { method: 'PUT' })).json();
   ws = await connect(target.webSocketDebuggerUrl);
-  await send('Runtime.enable'); await send('Log.enable'); await send('Page.enable');
+  await send('Runtime.enable');
+  await send('Network.enable'); await send('Network.setCacheDisabled', { cacheDisabled: true });
+  await send('Log.enable'); await send('Page.enable');
   await send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: false });
   await send('Page.navigate', { url });
   await sleep(Math.min(wait, 1500));
@@ -104,7 +127,7 @@ try {
   report.errors.push('harness: ' + e.message);
 } finally {
   try { ws?.close(); } catch {}
-  cleanup();
+  await shutdown();
 }
 console.log(JSON.stringify(report, null, 2));
 process.exit(report.errors.length ? 1 : 0);
