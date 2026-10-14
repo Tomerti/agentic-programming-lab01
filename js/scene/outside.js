@@ -30,6 +30,9 @@ const CITY_SEED = 7; // the mockup's seed: the same city as the approved mockup
 const STAR_SEED = 11;
 const LANDMARK = { x: -1.5, z: -11 };
 const LAUNCHER = { x: 3.8, z: -7.2, yaw: -0.4 };
+// The launcher stands on an earth berm, a truncated cone with a flat top, so that it shows above the
+// window sill: seen from the seat, the sill hides everything below y ≈ 1.55 at the launcher's distance.
+const BERM = { topRadius: 1.4, radius: 2.2, height: 1.5, color: 0x7d9455 };
 const TUBE_LENGTH = 1.2;
 const TUBE_TILT = 0.8; // radians from vertical, leaning towards the city
 
@@ -205,11 +208,12 @@ function buildLandmark({ THREE, group, mat, mesh }) {
   mesh(new THREE.ConeGeometry(0.3, 0.6, 10), mat(0x6c8fb8), 3.4, 3.5, -1.5, landmark);
 }
 
-// A trailer with a block of 20 tubes leaning towards the city. The block is placed so that the centre of
-// its muzzle face is WORLD.launchPoint, where the interceptors appear.
+// A trailer with a block of 20 tubes leaning towards the city, on top of its berm. The block is placed so
+// that the centre of its muzzle face is WORLD.launchPoint, where the interceptors appear.
 function buildLauncher({ THREE, group, mat, rbox, mesh }) {
+  mesh(new THREE.CylinderGeometry(BERM.topRadius, BERM.radius, BERM.height, 14), mat(BERM.color), LAUNCHER.x, BERM.height / 2, LAUNCHER.z);
   const launcher = new THREE.Group();
-  launcher.position.set(LAUNCHER.x, 0, LAUNCHER.z);
+  launcher.position.set(LAUNCHER.x, BERM.height, LAUNCHER.z);
   launcher.rotation.y = LAUNCHER.yaw;
   group.add(launcher);
   const dark = mat(0x1b2230);
@@ -224,7 +228,7 @@ function buildLauncher({ THREE, group, mat, rbox, mesh }) {
   tubes.rotation.x = -TUBE_TILT;
   const axis = new THREE.Vector3(0, 1, 0).applyEuler(tubes.rotation);
   const { x, y, z } = WORLD.launchPoint;
-  const muzzle = new THREE.Vector3(x - LAUNCHER.x, y, z - LAUNCHER.z).applyAxisAngle(new THREE.Vector3(0, 1, 0), -LAUNCHER.yaw);
+  const muzzle = new THREE.Vector3(x - LAUNCHER.x, y - BERM.height, z - LAUNCHER.z).applyAxisAngle(new THREE.Vector3(0, 1, 0), -LAUNCHER.yaw);
   tubes.position.copy(muzzle).addScaledVector(axis, -TUBE_LENGTH / 2);
   launcher.add(tubes);
   mesh(rbox(1.1, TUBE_LENGTH, 0.9, 0.05), mat(0x6f7a57), 0, 0, 0, tubes);
