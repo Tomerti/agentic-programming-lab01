@@ -1,0 +1,27 @@
+# Python is assumed for now. Add entries for other languages (build output,
+# dependency folders, caches) as the course's tooling becomes known.
+
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*~
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
