@@ -24,7 +24,7 @@ export const WORLD = freezeRows({
   neighborhoods: freezeRows([
     { id: 'gilo', name: 'Gilo', x: -4, z: -9, r: 2.2 },
     { id: 'oldcity', name: 'Old City', x: -1.5, z: -11, r: 2.5 },
-    { id: 'talpiot', name: 'Talpiot', x: 2.5, z: -9.5, r: 2.0 },
+    { id: 'talpiot', name: 'Talpiot', x: 1.4, z: -10.9, r: 1.8 },
     { id: 'pisgat', name: "Pisgat Ze'ev", x: 4, z: -13, r: 2.2 },
     { id: 'ramot', name: 'Ramot', x: -5, z: -13.5, r: 2.2 },
   ]),
