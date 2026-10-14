@@ -22,6 +22,8 @@
 // read as !!(expression), so any truthy value counts, an object too, and a Promise is not
 // awaited (it counts as truthy at once). The report then also holds
 //   ready: { expression, met, ms }   (whether it became truthy, and when, in ms after navigation)
+// and, when it never became truthy and the last poll threw, `error` with that exception (the
+// SyntaxError of a statement or a trailing `;`, for one).
 // An --eval may return a Promise, which is awaited: one that settles on a page event, with
 // a short --wait, takes the screenshot right after that event.
 
@@ -116,15 +118,21 @@ function connect(wsUrl) {
 let ws;
 const send = (method, params = {}) => new Promise((res, rej) => { const i = ++id; pending.set(i, { res, rej }); ws.send(JSON.stringify({ id: i, method, params })); });
 
-// Polls the --ready expression until it is truthy (true) or `deadline` (a Date.now() time) passes (false).
-// An exception, or a page between two documents, counts as not ready yet.
+// Polls the --ready expression until it is truthy or `deadline` (a Date.now() time) passes. An exception, or a
+// page between two documents, counts as not ready yet. Returns { met: true }, or { met: false } with `error` when
+// the last poll threw: a syntax error (a statement, a trailing `;`) would otherwise look like a page that never
+// got ready.
 async function waitUntilReady(expression, deadline) {
+  let error = null;
   for (;;) {
     try {
       const r = await send('Runtime.evaluate', { expression: `!!(${expression}\n)`, returnByValue: true });
-      if (!r.exceptionDetails && r.result.value) return true;
-    } catch {}
-    if (Date.now() + READY_POLL > deadline) return false;
+      if (!r.exceptionDetails && r.result.value) return { met: true };
+      error = r.exceptionDetails ? (r.exceptionDetails.exception?.description || r.exceptionDetails.text) : null;
+    } catch (e) {
+      error = e.message;
+    }
+    if (Date.now() + READY_POLL > deadline) return error === null ? { met: false } : { met: false, error };
     await sleep(READY_POLL);
   }
 }
@@ -140,8 +148,8 @@ try {
   await send('Page.navigate', { url });
   const navigated = Date.now();
   if (ready !== null) {
-    const met = await waitUntilReady(ready, navigated + wait);
-    report.ready = { expression: ready, met, ms: Date.now() - navigated };
+    const { met, error } = await waitUntilReady(ready, navigated + wait);
+    report.ready = { expression: ready, met, ms: Date.now() - navigated, ...(error && { error }) };
   } else await sleep(Math.min(wait, 1500));
   for (const a of actions) {
     const expr = a.kind === 'click'

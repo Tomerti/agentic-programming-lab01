@@ -424,7 +424,11 @@ export function createHud({ root, bus, session, settings = {}, onLowResource = (
     'hazard:jamming': ({ on }) => {
       if (on) toast(REFUSALS.jammed, 'warn');
     },
-    'mission:complete': ({ reward }) => toast(`Mission complete: +${reward}${COIN}`, 'good'),
+    // Named, so that two missions completing at once give two toasts, not one merged one.
+    'mission:complete': ({ id, reward }) => {
+      const mission = state.missions.find(m => m.id === id);
+      toast(`Mission complete: ${mission ? `${mission.text} · ` : ''}+${reward}${COIN}`, 'good');
+    },
     'tutorial:show': ({ text }) => toast(text, 'info', HUD.tutorialToast),
     'game:over': hide,
     'campaign:victory': hide,

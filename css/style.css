@@ -49,15 +49,19 @@ html, body {
 /* --- The HUD (js/ui/hud.js) ---
    The resources bar and the mission line under it sit on the wall band above the window. The camera keeps that
    band at a fixed share of the view's height (the top 14% at 16:10 and wider, more on narrower screens), so the
-   HUD's sizes follow the viewport height. Its panels are smoked glass with corners cut like the letters of the
-   display face, and the bar's lower edge has the console's hazard yellow. Nothing in the HUD takes the pointer:
-   every click reaches the room. */
+   HUD's sizes follow the viewport height, as far as the width allows (--hud-u). Its panels are smoked glass with
+   corners cut like the letters of the display face, and the bar's lower edge has the console's hazard yellow.
+   Nothing in the HUD takes the pointer: every click reaches the room. */
 
 #app {
-  --hud-top: clamp(6px, 1.1vh, 14px);
-  --hud-height: clamp(54px, 8.2vh, 92px);
-  --hud-num: clamp(23px, 3.9vh, 42px); /* the bar's numbers */
-  --hud-cut: clamp(6px, .9vh, 11px); /* how far a panel's corners are cut */
+  /* The HUD's unit: 1% of the view's height, but no more than .75% of its width. The bar's widest content
+     (five-digit coins, eight shields, a six-digit score, LOW tags) is about 122 units, so below 4:3, where the
+     width binds, it still fits with 5% to spare. Every HUD size below is a multiple of this unit. */
+  --hud-u: min(1vh, .75vw);
+  --hud-top: clamp(6px, calc(1.1 * var(--hud-u)), 14px);
+  --hud-height: clamp(54px, calc(8.2 * var(--hud-u)), 92px);
+  --hud-num: clamp(23px, calc(3.9 * var(--hud-u)), 42px); /* the bar's numbers */
+  --hud-cut: clamp(6px, calc(.9 * var(--hud-u)), 11px); /* how far a panel's corners are cut */
   --glass: linear-gradient(180deg, rgba(22, 34, 56, .84), rgba(9, 15, 28, .78));
   --glass-line: rgba(150, 196, 255, .3);
   --stripe: #ffc933; /* the console's hazard stripe */
@@ -96,8 +100,8 @@ html, body {
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: clamp(3px, .5vh, 6px);
-  padding: 0 clamp(10px, 1.7vh, 20px);
+  gap: clamp(3px, calc(.5 * var(--hud-u)), 6px);
+  padding: 0 clamp(10px, calc(1.7 * var(--hud-u)), 20px);
 }
 
 .hud-cell + .hud-cell::before {
@@ -110,7 +114,7 @@ html, body {
 }
 
 .hud-label {
-  font: 600 clamp(9px, 1.2vh, 13px)/1 var(--font-ui);
+  font: 600 clamp(9px, calc(1.2 * var(--hud-u)), 13px)/1 var(--font-ui);
   letter-spacing: .16em;
   text-transform: uppercase;
   white-space: nowrap;
@@ -217,9 +221,8 @@ html, body {
   35% { transform: scale(1.18); filter: brightness(1.6); }
 }
 
-/* The mission line: a tab hanging from the middle of the bar. It is at least as wide as the wall sign's lettering
-   behind it, which would otherwise peek out half covered. The missions give way (…) before the selected track
-   does. */
+/* The mission line: a tab hanging from the middle of the bar, as wide as its text. When the text is too long, the
+   missions give way (…) before the selected track does. */
 #mission-line {
   --cut: calc(var(--hud-cut) * .8);
   position: absolute;
@@ -227,11 +230,9 @@ html, body {
   left: 50%;
   transform: translateX(-50%);
   display: flex;
-  justify-content: center;
-  min-width: min(42vh, calc(100% - 32px));
   max-width: min(calc(100% - 32px), 150vh);
-  padding: clamp(4px, .6vh, 8px) clamp(14px, 2vh, 22px);
-  font: 500 clamp(12px, 1.65vh, 17px)/1.25 var(--font-ui);
+  padding: clamp(4px, calc(.6 * var(--hud-u)), 8px) clamp(14px, calc(2 * var(--hud-u)), 22px);
+  font: 500 clamp(12px, calc(1.65 * var(--hud-u)), 17px)/1.25 var(--font-ui);
   font-variant-numeric: tabular-nums;
   white-space: pre;
   color: var(--text);
@@ -262,7 +263,7 @@ html, body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: clamp(4px, .6vh, 7px);
+  gap: clamp(4px, calc(.6 * var(--hud-u)), 7px);
 }
 
 .toast {
@@ -273,7 +274,7 @@ html, body {
   gap: .7em;
   max-width: 100%;
   padding: .5em 1.15em .5em .75em;
-  font: 500 clamp(13px, 1.6vh, 16px)/1.35 var(--font-ui);
+  font: 500 clamp(13px, calc(1.6 * var(--hud-u)), 16px)/1.35 var(--font-ui);
   color: var(--text);
   box-shadow: inset 0 1px 0 var(--glass-line);
   animation: toast-in .22s ease-out;
@@ -317,8 +318,8 @@ html, body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 1.1vh;
-  padding: 2.2vh 16px 2.4vh;
+  gap: calc(1.1 * var(--hud-u));
+  padding: calc(2.2 * var(--hud-u)) 16px calc(2.4 * var(--hud-u));
   text-align: center;
   background: linear-gradient(90deg, transparent, rgba(8, 14, 27, .8) 25%, rgba(8, 14, 27, .8) 75%, transparent);
   transition: opacity .35s ease-in;
@@ -339,7 +340,7 @@ html, body {
 /* The trailing letter-spacing is taken back with a negative margin, so that the word stays centred. */
 .banner-title {
   margin-right: -.16em;
-  font: 700 clamp(40px, 8.8vh, 100px)/1 var(--font-display);
+  font: 700 clamp(40px, calc(8.8 * var(--hud-u)), 100px)/1 var(--font-display);
   letter-spacing: .16em;
   color: var(--text);
   text-shadow: 0 0 .35em rgba(255, 209, 102, .4);
@@ -347,14 +348,14 @@ html, body {
 
 .banner-sub {
   margin-right: -.34em;
-  font: 600 clamp(13px, 2.1vh, 24px)/1 var(--font-display);
+  font: 600 clamp(13px, calc(2.1 * var(--hud-u)), 24px)/1 var(--font-display);
   letter-spacing: .34em;
   text-transform: uppercase;
   color: var(--gold);
 }
 
 #banner.small {
-  padding: 1.2vh 16px;
+  padding: calc(1.2 * var(--hud-u)) 16px;
   background: linear-gradient(90deg, transparent, rgba(8, 14, 27, .7) 38%, rgba(8, 14, 27, .7) 62%, transparent);
 }
 #banner.small::before, #banner.small::after {
@@ -363,7 +364,7 @@ html, body {
 }
 #banner.small .banner-title {
   margin-right: -.3em;
-  font-size: clamp(20px, 3.6vh, 40px);
+  font-size: clamp(20px, calc(3.6 * var(--hud-u)), 40px);
   letter-spacing: .3em;
 }
 
