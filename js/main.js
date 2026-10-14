@@ -1,20 +1,29 @@
 // Boots the game and runs the frame loop: the scene, the world outside under the day/night lighting, the
-// control room with its monitors and console controls, and the game session that they show and drive. The
-// campaign starts at once for now. Later tasks bring the effects, the HUD, the screens and audio.
+// control room with its monitors and console controls, the game session that they show and drive, and the
+// rockets, interceptors, explosions, shakes and siren that show its events. The campaign starts at once for
+// now. Later tasks bring the HUD, the screens and audio.
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { TIMING, WORLD } from './config.js';
 import { createBus } from './core/events.js';
 import { createRng } from './core/rng.js';
 import { formatClock, lightingFor, phaseName } from './game/daynight.js';
 import { createSession, sortedDetectedThreats } from './game/session.js';
-import { createPersistence, DEFAULT_SETTINGS } from './game/state.js';
+import { createPersistence } from './game/state.js';
 import { createControls } from './scene/controls.js';
+import { createEffects } from './scene/effects.js';
 import { createMonitorPainter, radarBlipAt, threatRowAt } from './scene/monitors.js';
 import { buildOutside } from './scene/outside.js';
+import { createProjectiles } from './scene/projectiles.js';
 import { buildRoom } from './scene/room.js';
 import { createScene } from './scene/scene.js';
 
 const MAX_DT = 0.1; // seconds: a hidden tab or a long frame must not jump the clock
+// The window's centre, world (0, 1.9, −2.6), in the outside group's coordinates, which the session's positions use.
+const WINDOW_CENTRE = { x: 0, y: 2.5, z: -2.6 };
+// effects.shake() strengths (spec §8): an impact on a neighborhood, one on open ground, and an interception
+// closer than WORLD.shakeNearDistance to the window.
+const SHAKES = { populated: 1.0, open: 0.35, nearIntercept: 0.15 };
 
 // The browser's local storage, or null where the page may not use it (reading it throws then).
 function localStorageOrNull() {
@@ -26,11 +35,15 @@ function localStorageOrNull() {
 }
 
 const game = (window.__game ??= { debugHour: null }); // index.html creates it before the modules load
-const scene = createScene({ container: document.getElementById('viewport'), settings: DEFAULT_SETTINGS });
+const persistence = createPersistence(localStorageOrNull());
+const settings = persistence.loadSettings();
+const scene = createScene({ container: document.getElementById('viewport'), settings });
 const outside = buildOutside(scene.outsideGroup, { THREE, RoundedBoxGeometry });
 const room = buildRoom(scene.roomGroup, { THREE, RoundedBoxGeometry });
+const projectiles = createProjectiles({ THREE, outsideGroup: scene.outsideGroup });
+const effects = createEffects({ THREE, scene, outsideGroup: scene.outsideGroup, settings, props: room.props });
 const bus = createBus();
-const session = createSession({ rng: createRng(), persistence: createPersistence(localStorageOrNull()), bus });
+const session = createSession({ rng: createRng(), persistence, bus });
 const { state } = session;
 
 let zoom = 1; // the radar zoom, 1× or 2×; the dial switches it
@@ -75,6 +88,36 @@ bus.on('hazard:jamming', ({ on }) => controls.setLamp('resetRadar', on));
 const showLives = () => room.setLives(state.lives, state.maxLives);
 for (const type of ['round:start', 'life:lost', 'life:gained', 'shop:purchased']) bus.on(type, showLives);
 
+const nearWindow = ({ x, y, z }) => (
+  Math.hypot(x - WINDOW_CENTRE.x, y - WINDOW_CENTRE.y, z - WINDOW_CENTRE.z) < WORLD.shakeNearDistance
+);
+const soundSiren = () => room.beacon.spin(TIMING.alertSiren);
+// What the session's events show, outside and in the room. Their positions are outside coordinates.
+const reactions = {
+  'threat:intercepted': ({ position }) => {
+    effects.explosion(position, 'intercept');
+    if (nearWindow(position)) effects.shake(SHAKES.nearIntercept);
+  },
+  'threat:damaged': ({ threat }) => effects.explosion(threat.position, 'damage'),
+  'threat:impact': ({ position, populated, decoy }) => {
+    if (decoy) {
+      effects.explosion(position, 'decoy');
+    } else if (populated) {
+      effects.explosion(position, 'populated');
+      effects.shake(SHAKES.populated);
+      effects.flash();
+    } else {
+      effects.explosion(position, 'open');
+      effects.shake(SHAKES.open);
+    }
+  },
+  'interceptor:missed': ({ position }) => effects.explosion(position, 'damage'),
+  'interceptor:launched': () => effects.explosion(WORLD.launchPoint, 'launch'),
+  'alert:sounded': soundSiren, // in time or not, the siren sounds (spec §6)
+  'life:lost': soundSiren,
+};
+for (const [type, react] of Object.entries(reactions)) bus.on(type, react);
+
 // Presses a control the way a click on it does: points at it, picks what is under the pointer and clicks.
 // True when the click hit something. The pick uses the control's own position even when it is off screen,
 // where the scene's pointer stops at the edge.
@@ -86,7 +129,9 @@ function clickControl(name) {
   return controls.click();
 }
 
-Object.assign(game, { scene, outside, room, monitors, session, controls, bus, debug: { clickControl } });
+Object.assign(game, {
+  scene, outside, room, monitors, session, controls, bus, projectiles, effects, debug: { clickControl },
+});
 
 const canvas = scene.renderer.domElement;
 function pointAt(event) {
@@ -112,12 +157,15 @@ function frame(now) {
   last = now;
   time += dt;
   session.update(dt);
+  projectiles.sync(state);
   hour = typeof game.debugHour === 'number' ? game.debugHour : state.clockHour;
   room.update(dt);
   controls.update(dt, scene.pointer);
   monitors.update(dt);
   outside.applyLighting(lightingFor(hour), scene);
   outside.update(dt);
+  effects.update(dt);
+  room.beacon.update(dt);
   scene.update(dt);
   scene.render();
 }

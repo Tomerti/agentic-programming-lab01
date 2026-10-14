@@ -40,6 +40,9 @@ const SIGN_FONT = '700 84px "Chakra Petch", Inter, system-ui, sans-serif';
 // The siren beacon hangs on the front wall to the right of the window, where the seat sees it. On the right
 // wall it would stand about 59° to the side, out of view even with the mouse-look turned fully right.
 const BEACON = { x: 2.62, y: 2.35, z: WINDOW.z + ROOM.wall / 2 + 0.03 };
+// The beacon spinning: the pivot's turn in rad/s, the spotlight's intensity, and the dome's glow, which pulses by
+// ± pulse around `glow` at `rate` rad/s; `idle` is its glow at rest, when the light is off.
+const SIREN = { turn: 6, light: 40, glow: 1.2, pulse: 0.6, rate: 20, idle: 0.15 };
 const RACK_LIGHT_COLORS = [0x2ad1b0, 0x3f8cff, 0xffb020];
 
 const COLORS = {
@@ -218,7 +221,8 @@ function buildLifeLamps({ THREE, standard, rbox, mat, mesh }, desk) {
 
 // The siren beacon: a dark base on the wall and a red dome, with a red spotlight on a pivot that a spin turns
 // (the light stays off until then). The group's local −x, where the dome and the light face, points into
-// the room.
+// the room. spin(seconds) sets it going, or on to the later end when it is going already; update(dt) turns
+// it, and stops it when the time is up.
 function buildBeacon({ THREE, standard, mat, mesh, group }) {
   const beacon = new THREE.Group();
   beacon.position.set(BEACON.x, BEACON.y, BEACON.z);
@@ -226,7 +230,7 @@ function buildBeacon({ THREE, standard, mat, mesh, group }) {
   group.add(beacon);
   mesh(new THREE.CylinderGeometry(0.1, 0.12, 0.06, 16), mat(COLORS.dark), 0, 0, 0, beacon).rotation.z = Math.PI / 2;
   const dome = mesh(new THREE.SphereGeometry(0.11, 16, 12, 0, TAU, 0, Math.PI / 2), standard({
-    color: 0xff4b4b, emissive: 0xff2020, emissiveIntensity: 0.15, roughness: 0.3,
+    color: 0xff4b4b, emissive: 0xff2020, emissiveIntensity: SIREN.idle, roughness: 0.3,
   }), -0.04, 0, 0, beacon);
   dome.rotation.z = Math.PI / 2;
   const pivot = new THREE.Group();
@@ -235,7 +239,26 @@ function buildBeacon({ THREE, standard, mat, mesh, group }) {
   light.position.set(-0.1, 0, 0);
   light.target.position.set(-3, -1, 0);
   pivot.add(light, light.target);
-  return { group: beacon, dome, light, pivot };
+
+  let spinLeft = 0; // seconds of spinning still to go
+  let time = 0; // the pulse's clock
+  function spin(seconds) {
+    spinLeft = Math.max(spinLeft, seconds);
+  }
+  function update(dt) {
+    if (spinLeft <= 0) return;
+    spinLeft -= dt;
+    if (spinLeft > 0) {
+      time += dt;
+      pivot.rotation.y += SIREN.turn * dt;
+      light.intensity = SIREN.light;
+      dome.material.emissiveIntensity = SIREN.glow + Math.sin(time * SIREN.rate) * SIREN.pulse;
+    } else {
+      light.intensity = 0;
+      dome.material.emissiveIntensity = SIREN.idle;
+    }
+  }
+  return { group: beacon, dome, light, pivot, spin, update };
 }
 
 // The server rack against the left wall, with twelve status lights that update() blinks.
@@ -317,7 +340,8 @@ function buildChairAndPlant({ THREE, group, mat, rbox, mesh }) {
 //   desk        the console group; its origin is on the desk top at x 0, z 0 (world y 0.88)
 //   monitors    { resources, radar, threats }, each { group, screen, canvas, ctx, texture, width, height }; the
 //               screen mesh carries userData.monitor = its name
-//   beacon      { group, dome, light, pivot }: the siren; spinning the pivot sweeps the light
+//   beacon      { group, dome, light, pivot, spin(seconds), update(dt) }: the siren; spin() lights it and turns
+//               the pivot, which sweeps the light, for that long (update() runs it, every frame)
 //   lifeLamps   the eight lamp meshes, left to right; setLives(lives, maxLives) lights `lives` of them, dims
 //               the rest up to maxLives and hides the others
 //   sign, riser the wall sign group and the riser mesh

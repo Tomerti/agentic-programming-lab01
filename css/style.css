@@ -1,4 +1,4 @@
-/* Page shell: palette tokens, the full-viewport 3D canvas and the fatal-error overlay.
+/* Page shell: palette tokens, the full-viewport 3D canvas, the impact flash and the fatal-error overlay.
    The HUD, toasts, banners, screens and shop add their rules in later tasks. */
 
 :root {
@@ -32,6 +32,18 @@ html, body {
 
 #viewport { position: absolute; inset: 0; }
 #viewport canvas { display: block; width: 100%; height: 100%; }
+
+/* The red edge flash of a populated impact (effects.js turns .on on for 250 ms): it shows at once and fades
+   out over 250 ms. */
+#flash {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  box-shadow: inset 0 0 120px 40px rgba(255, 40, 40, .55);
+  transition: opacity 250ms ease-out;
+}
+#flash.on { opacity: 1; transition: none; }
 
 #fatal {
   position: absolute;
