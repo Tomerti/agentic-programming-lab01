@@ -25,3 +25,6 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 .ipynb_checkpoints/
+
+# Brainstorming companion sessions (superpowers)
+.superpowers/
