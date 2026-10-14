@@ -125,19 +125,19 @@ conversion exists between logic and scene.
 - City centre `WORLD.cityCenter = {x: 0, z: −11}` (outside coordinates). Radar scope
   radius `WORLD.radarRadius = 16`.
 - Neighborhoods (populated impact zones, circles in outside coordinates):
-  Gilo (−4, −9, r 2.2), Old City (−1.5, −11, r 2.5), Talpiot (2.5, −9.5, r 2.0),
+  Gilo (−4, −9, r 2.2), Old City (−1.5, −11, r 2.5), Talpiot (1.4, −10.9, r 1.8),
   Pisgat Ze'ev (4, −13, r 2.2), Ramot (−5, −13.5, r 2.2). Open areas: rectangles at
   x ∈ [−12, −8] and x ∈ [8, 12], z ∈ [−15, −9].
 - Threat spawn points: `{x: ±(14..16), y: 7..9, z: −20..−16}` for arcing types (low enough
   that the arc's apex is visible through the window); UAVs and cruise missiles spawn at the
   same x/z but y 2..3 and fly a flatter path.
-- Interceptors launch from `WORLD.launchPoint = (5.2, 1.6, −7.0)`, the top of the launcher's
-  tube block (the launcher body sits at (5.2, 0, −7.2)).
+- Interceptors launch from `WORLD.launchPoint = (3.8, 3.1, −7.0)`, the top of the launcher's
+  tube block (the launcher body sits at (3.8, 1.5, −7.2) on a low berm so it shows above the window sill).
 - The window's horizontal field of view covers outside x ∈ ≈[−6, 6] at z = −11. The
   director weights populated zones so ≥70 % of populated impacts (and therefore most
   interceptions) occur inside that range; the rest are still visible as flashes and on
   the radar.
-- The launcher sits at outside (5.2, 0, −7.2); interceptors launch from its tube block.
+- The launcher sits on a berm at outside (3.8, 1.5, −7.2), inside the window's field of view; interceptors launch from its tube block.
 
 Flight paths are quadratic Béziers: `p0` spawn, `p2` impact, `p1 = lerp(p0, p2, 0.5) +
 (0, arcHeight, 0)`. `t` runs 0→1 over `dur` seconds. Position and tangent are pure
