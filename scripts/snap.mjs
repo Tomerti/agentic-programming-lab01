@@ -1,0 +1,110 @@
+#!/usr/bin/env node
+// Headless-Chrome harness for visual checks, with no dependencies (Node ≥ 22).
+//
+//   node scripts/snap.mjs <url> [--out shot.png] [--wait 4000] [--width 1440] [--height 900]
+//                         [--eval "<js expression>"]... [--click "<css selector>"]...
+//
+// Loads the page in headless Chrome over the DevTools protocol, collects console
+// messages and uncaught exceptions, runs the optional --click / --eval actions in order
+// after the page has loaded, waits, captures a screenshot and prints a JSON report:
+//   { url, errors: [...], console: [...], evals: [...], screenshot }
+// Exit code is 1 when any error was logged or an exception was thrown, so it can gate
+// a verification step.
+
+import { spawn } from 'node:child_process';
+import { writeFileSync, existsSync } from 'node:fs';
+import { setTimeout as sleep } from 'node:timers/promises';
+
+const args = process.argv.slice(2);
+const url = args.find(a => !a.startsWith('--'));
+if (!url) { console.error('usage: node scripts/snap.mjs <url> [--out f.png] [--wait ms] [--eval js]... [--click sel]...'); process.exit(2); }
+const opt = (name, dflt) => { const i = args.indexOf('--' + name); return i >= 0 ? args[i + 1] : dflt; };
+const many = name => args.flatMap((a, i) => a === '--' + name ? [args[i + 1]] : []);
+const out = opt('out', 'snap.png');
+const wait = Number(opt('wait', 4000));
+const width = Number(opt('width', 1440)), height = Number(opt('height', 900));
+const actions = args.flatMap((a, i) => (a === '--eval' || a === '--click') ? [{ kind: a.slice(2), value: args[i + 1] }] : []);
+
+const CANDIDATES = [
+  process.env.CHROME_PATH,
+  'C:/Program Files/Google/Chrome/Application/chrome.exe',
+  'C:/Program Files (x86)/Google/Chrome/Application/chrome.exe',
+  'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',
+  'C:/Program Files/Microsoft/Edge/Application/msedge.exe',
+  '/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser',
+  '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+].filter(Boolean);
+const chrome = CANDIDATES.find(p => existsSync(p));
+if (!chrome) { console.error('No Chrome/Edge found; set CHROME_PATH'); process.exit(2); }
+
+const port = 9222 + Math.floor(Math.random() * 500);
+const proc = spawn(chrome, [
+  '--headless=new', '--disable-gpu', '--enable-unsafe-swiftshader', '--use-angle=swiftshader',
+  '--no-first-run', '--no-default-browser-check', '--mute-audio', '--autoplay-policy=no-user-gesture-required',
+  `--remote-debugging-port=${port}`, `--window-size=${width},${height}`, '--user-data-dir=' + process.env.TEMP + '/snap-profile-' + port,
+  'about:blank',
+], { stdio: 'ignore' });
+const cleanup = () => { try { proc.kill('SIGKILL'); } catch {} };
+process.on('exit', cleanup);
+
+async function waitForDevtools() {
+  for (let i = 0; i < 100; i++) {
+    try { const r = await fetch(`http://127.0.0.1:${port}/json/version`); if (r.ok) return; } catch {}
+    await sleep(100);
+  }
+  throw new Error('Chrome did not start');
+}
+
+const report = { url, errors: [], console: [], evals: [], screenshot: out };
+let id = 0; const pending = new Map();
+function connect(wsUrl) {
+  return new Promise((resolve, reject) => {
+    const ws = new WebSocket(wsUrl);
+    ws.onopen = () => resolve(ws); ws.onerror = e => reject(e);
+    ws.onmessage = m => {
+      const msg = JSON.parse(m.data);
+      if (msg.id && pending.has(msg.id)) { const { res, rej } = pending.get(msg.id); pending.delete(msg.id); msg.error ? rej(new Error(msg.error.message)) : res(msg.result); }
+      else if (msg.method === 'Runtime.consoleAPICalled') {
+        const text = msg.params.args.map(a => a.value ?? a.description ?? '').join(' ');
+        report.console.push(`[${msg.params.type}] ${text}`);
+        if (msg.params.type === 'error') report.errors.push(text);
+      } else if (msg.method === 'Runtime.exceptionThrown') {
+        const d = msg.params.exceptionDetails;
+        report.errors.push(`Uncaught: ${d.exception?.description || d.text}`);
+      } else if (msg.method === 'Log.entryAdded' && msg.params.entry.level === 'error') {
+        if (!/favicon\.ico/.test(msg.params.entry.url || '')) report.errors.push(`[log] ${msg.params.entry.text} ${msg.params.entry.url || ''}`);
+      }
+    };
+  });
+}
+let ws;
+const send = (method, params = {}) => new Promise((res, rej) => { const i = ++id; pending.set(i, { res, rej }); ws.send(JSON.stringify({ id: i, method, params })); });
+
+try {
+  await waitForDevtools();
+  const target = await (await fetch(`http://127.0.0.1:${port}/json/new?about:blank`, { method: 'PUT' })).json();
+  ws = await connect(target.webSocketDebuggerUrl);
+  await send('Runtime.enable'); await send('Log.enable'); await send('Page.enable');
+  await send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: false });
+  await send('Page.navigate', { url });
+  await sleep(Math.min(wait, 1500));
+  for (const a of actions) {
+    const expr = a.kind === 'click'
+      ? `(() => { const el = document.querySelector(${JSON.stringify(a.value)}); if (!el) return 'NOT FOUND: ' + ${JSON.stringify(a.value)}; el.click(); return 'clicked ' + ${JSON.stringify(a.value)}; })()`
+      : a.value;
+    const r = await send('Runtime.evaluate', { expression: expr, awaitPromise: true, returnByValue: true });
+    report.evals.push({ [a.kind]: a.value, result: r.exceptionDetails ? 'EXCEPTION: ' + (r.exceptionDetails.exception?.description || r.exceptionDetails.text) : r.result.value });
+    if (r.exceptionDetails) report.errors.push(`eval failed: ${a.value}`);
+    await sleep(300);
+  }
+  await sleep(Math.max(0, wait - 1500));
+  const shot = await send('Page.captureScreenshot', { format: 'png' });
+  writeFileSync(out, Buffer.from(shot.data, 'base64'));
+} catch (e) {
+  report.errors.push('harness: ' + e.message);
+} finally {
+  try { ws?.close(); } catch {}
+  cleanup();
+}
+console.log(JSON.stringify(report, null, 2));
+process.exit(report.errors.length ? 1 : 0);
