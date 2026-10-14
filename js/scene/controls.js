@@ -293,7 +293,8 @@ function prepare(control) {
 // createControls({ THREE, RoundedBoxGeometry, scene, camera, desk, monitors, room, onAction }) builds the
 // controls into `desk` (room.desk) and returns:
 //   update(dt, pointer)   picks what is under `pointer` (normalised device coordinates, {x, y}), lights it
-//                         up, sets the cursor and runs the animations
+//                         up, sets the cursor and runs the animations; with `pointer` null (no pointer over the
+//                         room) nothing is under it, so no control stays lit and the cursor is the default one
 //   click()               presses the control under the pointer, or reports the screen pixel under it; true
 //                         when the pointer was on either, false when it was on neither
 //   hovered               the name of the control or monitor under the pointer, or null
@@ -373,7 +374,7 @@ export function createControls({ THREE, RoundedBoxGeometry, scene, camera, desk,
   }
 
   function update(dt, pointer) {
-    hover = pick(pointer);
+    hover = pointer ? pick(pointer) : null;
     const control = hover?.control ?? null;
     if (control !== lit) {
       lightUp(lit, false);

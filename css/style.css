@@ -1,6 +1,5 @@
 /* Page shell: palette tokens, the full-viewport 3D canvas, the impact flash, the HUD (resources bar, mission
-   line, toasts and banners) and the fatal-error overlay. The screens and the shop add their rules in later
-   tasks. */
+   line, toasts and banners), the screens and the shop over it all, and the fatal-error overlay. */
 
 :root {
   --bg: #0b1020;
@@ -152,7 +151,9 @@ html, body {
 
 .hud-coins .hud-value { color: var(--gold); text-shadow: 0 0 .45em rgba(255, 209, 102, .35); }
 
-.hud-coin {
+/* The coin, in the bar and in the screens' amounts. */
+.hud-coin, .coin {
+  flex: none;
   align-self: center;
   width: .66em;
   height: .66em;
@@ -404,6 +405,785 @@ html, body {
 @keyframes fade-in {
   from { opacity: 0; }
 }
+
+/* --- The screens and the shop (js/ui/screens.js, js/ui/shop.js) ---
+   One screen at a time fills #overlay: a backdrop that dims the room and a panel of the HUD's smoked glass, its
+   corners cut the same way and its top edge in the console's hazard yellow (red when the city has fallen). The
+   title is the exception: the game's name stands large over the left of the room, which shows through on the
+   right. An empty #overlay lets every click through to the room; a screen takes them all. Sizes follow the view's
+   height within bounds, so that every screen fits from 1024×768 up. Buttons have two corners cut, like the
+   letters of the display face. */
+
+#app {
+  --shade: 6 10 20; /* the backdrops, as r g b */
+  --well: rgba(6, 11, 22, .6); /* sunken areas inside a panel: figures, cards, rows */
+  --rule: rgba(150, 196, 255, .16); /* thin dividers and outlines */
+  --ink: #17130a; /* text on the hazard yellow */
+}
+
+#overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  pointer-events: none;
+}
+
+.screen {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  pointer-events: auto;
+  background: radial-gradient(ellipse 75% 70% at 50% 45%, rgb(var(--shade) / .55), rgb(var(--shade) / .88));
+}
+
+/* A screen that opens over the game fades in; one that takes another's place does not, or the room would flash
+   through between them. */
+.screen.entering { animation: fade-in .2s ease-out; }
+
+/* Paused, the round shows through, HUD and all. */
+.screen-pause {
+  background: radial-gradient(ellipse 70% 65% at 50% 45%, rgb(var(--shade) / .3), rgb(var(--shade) / .72));
+}
+
+.panel {
+  --cut: clamp(10px, 1.6vh, 16px);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: clamp(14px, 2.3vh, 22px);
+  width: min(var(--panel-width, 540px), 100%);
+  max-height: 100%;
+  overflow-y: auto;
+  padding: clamp(18px, 3.4vh, 34px) clamp(20px, 2.6vw, 36px);
+  background: linear-gradient(180deg, rgba(22, 34, 56, .93), rgba(9, 15, 28, .9));
+  backdrop-filter: blur(12px) saturate(1.2);
+  clip-path: polygon(var(--cut) 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% calc(100% - var(--cut)),
+    calc(100% - var(--cut)) 100%, var(--cut) 100%, 0 calc(100% - var(--cut)), 0 var(--cut));
+  box-shadow: inset 0 3px 0 var(--stripe), inset 0 0 0 1px var(--rule);
+  animation: panel-in .3s cubic-bezier(.2, .8, .2, 1);
+}
+
+.panel.alarm { box-shadow: inset 0 3px 0 var(--red), inset 0 0 0 1px rgba(255, 75, 75, .3); }
+
+.screen-pause .panel { --panel-width: 440px; }
+.screen-settings .panel { --panel-width: 560px; }
+.screen-summary .panel { --panel-width: 800px; }
+.screen-gameover .panel, .screen-victory .panel { --panel-width: 760px; }
+.screen-howto .panel { --panel-width: 920px; }
+.shop { --panel-width: 1120px; }
+
+@keyframes panel-in {
+  from { opacity: 0; transform: translateY(12px) scale(.985); }
+}
+
+.panel-head {
+  display: flex;
+  align-items: center;
+  gap: clamp(14px, 2vw, 24px);
+}
+
+.panel-title {
+  font: 700 clamp(26px, 4.6vh, 42px)/1.05 var(--font-display);
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  text-wrap: balance;
+  color: var(--text);
+}
+
+.panel.alarm .panel-title { color: #ffdcdc; text-shadow: 0 0 .4em rgba(255, 75, 75, .5); }
+
+.panel-sub {
+  margin-top: .6em;
+  font: 600 clamp(12px, 1.7vh, 15px)/1.3 var(--font-display);
+  letter-spacing: .2em;
+  text-transform: uppercase;
+  text-wrap: balance;
+  color: var(--gold);
+}
+
+.panel-text {
+  max-width: 64ch;
+  font: 400 clamp(14px, 1.8vh, 16px)/1.5 var(--font-ui);
+  color: var(--muted);
+}
+
+.panel-note { font: 500 13px/1.3 var(--font-ui); color: var(--muted); }
+
+.section-title {
+  margin-bottom: .75em;
+  font: 600 clamp(12px, 1.6vh, 14px)/1.2 var(--font-display);
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: var(--gold);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.actions.stack { flex-direction: column; }
+.actions.stack .btn { width: 100%; }
+
+/* Buttons: glass, or the hazard yellow for a screen's main action, or red for one that erases something. */
+.btn {
+  --cut: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  min-height: clamp(40px, 5.4vh, 48px);
+  padding: 0 clamp(16px, 1.6vw, 22px);
+  border: 0;
+  font: 600 clamp(15px, 1.95vh, 17px)/1.1 var(--font-display);
+  letter-spacing: .05em;
+  text-align: left;
+  color: var(--text);
+  background: rgba(32, 47, 76, .88);
+  backdrop-filter: blur(8px) saturate(1.25);
+  box-shadow: inset 0 1px 0 rgba(150, 196, 255, .3), inset 0 0 0 1px var(--rule);
+  clip-path: polygon(var(--cut) 0, 100% 0, 100% calc(100% - var(--cut)), calc(100% - var(--cut)) 100%, 0 100%,
+    0 var(--cut));
+  cursor: pointer;
+  transition: background-color .15s, box-shadow .15s, color .15s;
+}
+
+.btn:hover:not(:disabled) {
+  background: rgba(54, 80, 124, .9);
+  box-shadow: inset 3px 0 0 var(--stripe), inset 0 1px 0 rgba(150, 196, 255, .35),
+    inset 0 0 0 1px rgba(150, 196, 255, .3);
+}
+
+.btn:active:not(:disabled) { transform: translateY(1px); }
+
+.btn.primary {
+  color: var(--ink);
+  background: var(--stripe);
+  box-shadow: inset 0 -3px 0 rgba(0, 0, 0, .2);
+}
+
+.btn.primary:hover:not(:disabled) { background: #ffd862; box-shadow: inset 0 -3px 0 rgba(0, 0, 0, .2); }
+
+.btn.danger {
+  color: #ffd4d4;
+  background: rgba(255, 75, 75, .16);
+  box-shadow: inset 0 0 0 1px rgba(255, 75, 75, .55);
+}
+
+.btn.danger:hover:not(:disabled) {
+  background: rgba(255, 75, 75, .3);
+  box-shadow: inset 0 0 0 1px rgba(255, 130, 130, .85);
+}
+
+/* The keyboard's button: a ring inside the edge, which the cut corners would clip outside it. */
+.btn:focus-visible, .btn.danger:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--text); }
+.btn.primary:focus-visible { box-shadow: inset 0 0 0 2px var(--ink), inset 0 0 0 4px #fff1bf; }
+
+.btn:disabled {
+  cursor: not-allowed;
+  color: rgba(184, 194, 208, .5);
+  background: rgba(20, 30, 50, .7);
+  box-shadow: inset 0 0 0 1px rgba(150, 196, 255, .1);
+}
+
+.btn-note {
+  font: 500 clamp(11px, 1.5vh, 13px)/1.2 var(--font-ui);
+  letter-spacing: 0;
+  text-align: right;
+  color: rgba(184, 194, 208, .78);
+}
+
+.amount {
+  display: inline-flex;
+  align-items: center;
+  gap: .3em;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--gold);
+}
+
+/* Figures: a row of cells like the HUD bar's, each a small label over a large value. The cells share the row
+   evenly, but none is narrower than its longest word or its number. */
+.figures {
+  display: grid;
+  grid-auto-columns: minmax(min-content, 1fr);
+  grid-auto-flow: column;
+  background: var(--well);
+  box-shadow: inset 0 1px 0 var(--rule);
+}
+
+.figure {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 8px;
+  padding: clamp(10px, 1.5vh, 14px) clamp(9px, .9vw, 14px);
+}
+
+.figure + .figure { box-shadow: inset 1px 0 0 var(--rule); }
+
+.figure dt {
+  font: 600 clamp(10px, 1.3vh, 11.5px)/1.25 var(--font-ui);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.figure dd {
+  font: 700 clamp(22px, 3.4vh, 30px)/1 var(--font-display);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--text);
+}
+
+.figures.major dd { font-size: clamp(26px, 4.2vh, 38px); }
+.figure.good dd { color: var(--teal); }
+.figure.bad dd { color: var(--red); }
+.figure.warn dd { color: var(--amber); }
+.figure.gold dd { color: var(--gold); }
+.figure.lives dd { color: #ff8f8f; }
+
+/* An in-page question before an action that erases something. */
+.confirm {
+  display: grid;
+  gap: 12px;
+  width: 100%;
+  padding: 14px 16px;
+  background: rgba(38, 14, 24, .92);
+  backdrop-filter: blur(8px) saturate(1.2);
+  box-shadow: inset 3px 0 0 var(--red), inset 0 0 0 1px rgba(255, 75, 75, .22);
+}
+
+.confirm-text { font: 500 clamp(14px, 1.8vh, 16px)/1.45 var(--font-ui); color: var(--text); }
+
+.confirm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+/* The title: the name over the left of the room, the menu under it. */
+.screen-title {
+  justify-content: flex-start;
+  padding: clamp(24px, 6vh, 64px) clamp(24px, 6.5vw, 104px);
+  background:
+    linear-gradient(90deg, rgb(var(--shade) / .94), rgb(var(--shade) / .8) 28%, rgb(var(--shade) / .3) 54%,
+      rgb(var(--shade) / .06) 76%, transparent),
+    linear-gradient(0deg, rgb(var(--shade) / .55), transparent 38%);
+}
+
+.title-block {
+  display: flex;
+  flex-direction: column;
+  width: max-content;
+  max-width: 100%;
+  max-height: 100%;
+}
+
+/* The wider word, DOME, is about 4.1em: 22vw keeps it inside the view on narrow screens. */
+.logo {
+  margin-left: -.04em;
+  font: 700 clamp(56px, min(15vh, 22vw), 150px)/.84 var(--font-display);
+  letter-spacing: .015em;
+  color: var(--text);
+  text-shadow: 0 .04em .3em rgba(0, 0, 0, .5);
+}
+
+.logo span {
+  display: block;
+  animation: logo-in .8s cubic-bezier(.2, .8, .2, 1) both;
+}
+
+.logo span + span { animation-delay: .1s; }
+
+@keyframes logo-in {
+  from { opacity: 0; letter-spacing: .32em; }
+}
+
+.logo-sub {
+  margin-top: clamp(14px, 2.4vh, 24px);
+  font: 600 clamp(14px, 2.3vh, 21px)/1 var(--font-display);
+  letter-spacing: .43em;
+  color: var(--gold);
+}
+
+.tagline {
+  max-width: 34em;
+  margin-top: clamp(10px, 1.6vh, 14px);
+  font: 400 clamp(14px, 1.9vh, 17px)/1.45 var(--font-ui);
+  color: var(--muted);
+}
+
+.menu {
+  display: grid;
+  gap: clamp(8px, 1.1vh, 10px);
+  width: min(100%, 360px);
+  margin-top: clamp(24px, 4.8vh, 44px);
+}
+
+.menu .btn { width: 100%; }
+
+.records {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 20px;
+  margin-top: clamp(14px, 2.4vh, 22px);
+  font: 500 13px/1.4 var(--font-ui);
+  color: var(--muted);
+}
+
+.records b { font-family: var(--font-display); font-weight: 700; color: var(--gold); }
+
+/* How to play: the controls as a table, then the open-ground rule beside the resources. */
+.controls {
+  width: 100%;
+  border-collapse: collapse;
+  font: 400 clamp(13px, 1.75vh, 15px)/1.35 var(--font-ui);
+  color: var(--muted);
+}
+
+.controls th, .controls td {
+  padding: clamp(5px, .85vh, 8px) 12px;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.controls th:first-child { padding-left: 0; }
+.controls tr + tr > * { border-top: 1px solid var(--rule); }
+
+.controls th {
+  width: 11.5em;
+  white-space: nowrap;
+  font: 600 .95em/1.2 var(--font-display);
+  letter-spacing: .04em;
+  color: var(--text);
+}
+
+.controls th.plate { letter-spacing: .1em; }
+.controls td.keys { width: 8em; white-space: nowrap; }
+
+kbd {
+  display: inline-block;
+  min-width: 1.9em;
+  margin-right: .35em;
+  padding: .25em .5em;
+  border-radius: 3px;
+  font: 600 .82em/1 var(--font-display);
+  text-align: center;
+  color: var(--text);
+  background: rgba(150, 196, 255, .1);
+  box-shadow: inset 0 -2px 0 rgba(0, 0, 0, .35), inset 0 0 0 1px rgba(150, 196, 255, .32);
+}
+
+/* The console's caps (controls.js), and the radar's blips (monitors.js), in their own colours. */
+.cap {
+  display: inline-block;
+  width: .8em;
+  height: .8em;
+  margin-right: .6em;
+  border-radius: 50%;
+  vertical-align: -.06em;
+  background: var(--cap);
+  box-shadow: inset 0 -.12em 0 rgba(0, 0, 0, .3);
+}
+
+.cap-red { --cap: #d81e1e; }
+.cap-amber { --cap: #e08a00; }
+.cap-blue { --cap: #2563eb; }
+.cap-grey { --cap: #aeb8c4; border-radius: 2px; }
+
+.howto-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: clamp(16px, 2.6vw, 36px);
+}
+
+.rule {
+  display: flex;
+  align-items: baseline;
+  gap: .7em;
+  font: 400 clamp(14px, 1.8vh, 15px)/1.5 var(--font-ui);
+  color: var(--text);
+}
+
+.rule + .rule { margin-top: .6em; }
+
+.blip {
+  flex: none;
+  width: .7em;
+  height: .7em;
+  border-radius: 50%;
+}
+
+.blip.red { background: #ff5c5c; box-shadow: 0 0 .5em rgba(255, 92, 92, .7); }
+.blip.grey { background: #a0a8b4; }
+
+.resources {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: .55em 1em;
+  font: 400 clamp(14px, 1.8vh, 15px)/1.45 var(--font-ui);
+}
+
+.resources dt { font: 700 .95em/1.5 var(--font-display); letter-spacing: .04em; }
+.resources dt.coins { color: var(--gold); }
+.resources dt.ammo { color: var(--teal); }
+.resources dt.lives { color: var(--red); }
+.resources dd { color: var(--muted); }
+
+/* Settings: one row per setting, the name on the left and its control on the right. */
+.settings-list { display: grid; }
+
+.setting {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 18px;
+  padding: clamp(10px, 1.6vh, 14px) 0;
+}
+
+.setting + .setting { border-top: 1px solid var(--rule); }
+
+.setting-name {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font: 600 clamp(15px, 1.95vh, 17px)/1.2 var(--font-display);
+  letter-spacing: .03em;
+  color: var(--text);
+}
+
+.setting-hint {
+  font: 400 clamp(12px, 1.6vh, 13px)/1.3 var(--font-ui);
+  letter-spacing: 0;
+  color: var(--muted);
+}
+
+.setting-control {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.setting-value {
+  min-width: 3.2em;
+  font: 700 15px/1 var(--font-display);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  color: var(--teal);
+}
+
+.setting-done { font: 600 14px/1.3 var(--font-ui); color: var(--teal); }
+
+.setting input[type='range'] {
+  --fill: 0%;
+  appearance: none;
+  width: clamp(150px, 18vw, 220px);
+  height: 24px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.setting input[type='range']::-webkit-slider-runnable-track {
+  height: 4px;
+  background: linear-gradient(90deg, var(--teal) var(--fill), rgba(42, 209, 176, .2) var(--fill));
+}
+
+.setting input[type='range']::-moz-range-track { height: 4px; background: rgba(42, 209, 176, .2); }
+.setting input[type='range']::-moz-range-progress { height: 4px; background: var(--teal); }
+
+.setting input[type='range']::-webkit-slider-thumb {
+  appearance: none;
+  width: 12px;
+  height: 22px;
+  margin-top: -9px;
+  background: var(--text);
+  box-shadow: 0 0 0 2px var(--teal);
+}
+
+.setting input[type='range']::-moz-range-thumb {
+  width: 12px;
+  height: 22px;
+  border: 0;
+  border-radius: 0;
+  background: var(--text);
+  box-shadow: 0 0 0 2px var(--teal);
+}
+
+/* A switch: a dark slot whose square knob slides over and lights teal when on. */
+.switch {
+  position: relative;
+  flex: none;
+  width: 48px;
+  height: 26px;
+  appearance: none;
+  background: rgba(150, 196, 255, .12);
+  box-shadow: inset 0 0 0 1px rgba(150, 196, 255, .32);
+  cursor: pointer;
+  transition: background-color .15s, box-shadow .15s;
+}
+
+.switch::before {
+  content: '';
+  position: absolute;
+  top: 5px;
+  left: 5px;
+  width: 16px;
+  height: 16px;
+  background: var(--muted);
+  transition: transform .15s, background-color .15s;
+}
+
+.switch:checked { background: rgba(42, 209, 176, .26); box-shadow: inset 0 0 0 1px rgba(42, 209, 176, .75); }
+.switch:checked::before {
+  transform: translateX(22px);
+  background: var(--teal);
+  box-shadow: 0 0 .5em rgba(42, 209, 176, .8);
+}
+
+.switch:focus-visible, .setting input[type='range']:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 3px;
+}
+
+/* The round summary's missions. */
+.missions ul {
+  display: grid;
+  gap: 6px;
+  list-style: none;
+}
+
+.mission {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: clamp(8px, 1.3vh, 11px) 14px;
+  font: 500 clamp(14px, 1.8vh, 16px)/1.35 var(--font-ui);
+  color: var(--text);
+  background: var(--well);
+}
+
+.mission-mark {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 1.4em;
+  height: 1.4em;
+  font: 700 .85em/1 var(--font-display);
+  color: var(--bg);
+  background: var(--teal);
+}
+
+.mission-text { flex: 1 1 auto; }
+.mission:not(.done) .mission-mark { color: var(--muted); background: rgba(184, 194, 208, .18); }
+.mission:not(.done) .mission-text { color: var(--muted); }
+.mission-progress { font: 700 .95em/1 var(--font-display); color: var(--muted); }
+
+/* Victory: the rating, stamped beside the title. */
+.rating {
+  --tone: var(--gold);
+  --cut: 16px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: clamp(88px, 14vh, 128px);
+  aspect-ratio: 1;
+  font: 700 clamp(64px, 10.5vh, 100px)/1 var(--font-display);
+  color: var(--tone);
+  text-shadow: 0 0 .3em color-mix(in srgb, var(--tone) 60%, transparent);
+  background: color-mix(in srgb, var(--tone) 13%, transparent);
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--tone) 75%, transparent);
+  clip-path: polygon(var(--cut) 0, 100% 0, 100% calc(100% - var(--cut)), calc(100% - var(--cut)) 100%, 0 100%,
+    0 var(--cut));
+  animation: rating-in .6s cubic-bezier(.2, .9, .3, 1.25) .15s both;
+}
+
+.rating-A { --tone: var(--teal); }
+.rating-B { --tone: var(--blue); }
+.rating-C, .rating-none { --tone: var(--muted); }
+
+@keyframes rating-in {
+  from { opacity: 0; transform: scale(1.4); }
+}
+
+/* The shop: the balance, the restock row, the upgrades in a grid of cards. */
+.shop-head {
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+}
+
+.title-round {
+  font-size: .6em;
+  font-weight: 600;
+  letter-spacing: .14em;
+  white-space: nowrap;
+  color: var(--muted);
+}
+
+.balance {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.balance-label, .item-level-label {
+  font: 600 clamp(10px, 1.3vh, 12px)/1 var(--font-ui);
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+#shop-balance {
+  display: inline-flex;
+  align-items: center;
+  gap: .25em;
+  font: 700 clamp(30px, 5vh, 44px)/1 var(--font-display);
+  font-variant-numeric: tabular-nums;
+  color: var(--gold);
+  text-shadow: 0 0 .45em rgba(255, 209, 102, .35);
+}
+
+.restock {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: clamp(14px, 2vw, 28px);
+  padding: clamp(10px, 1.6vh, 14px) clamp(14px, 1.6vw, 20px);
+  background: var(--well);
+  box-shadow: inset 3px 0 0 var(--teal), inset 0 1px 0 var(--rule);
+}
+
+.restock-gauge {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.gauge-count {
+  font: 700 clamp(20px, 3vh, 26px)/1 var(--font-display);
+  font-variant-numeric: tabular-nums;
+  color: var(--teal);
+}
+
+.gauge-of { font-size: .6em; color: var(--muted); }
+
+.gauge {
+  width: clamp(90px, 11vw, 170px);
+  height: 6px;
+  background: rgba(42, 209, 176, .16);
+  box-shadow: inset 0 0 0 1px rgba(42, 209, 176, .3);
+}
+
+.gauge-fill {
+  display: block;
+  height: 100%;
+  background: var(--teal);
+  box-shadow: 0 0 .4em rgba(42, 209, 176, .7);
+}
+
+.shop-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: clamp(8px, 1.2vh, 12px);
+}
+
+.shop-item {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(6px, 1vh, 10px);
+  padding: clamp(10px, 1.6vh, 16px) clamp(14px, 1.5vw, 18px);
+  background: var(--well);
+  box-shadow: inset 0 1px 0 var(--rule);
+}
+
+.item-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.item-name {
+  font: 600 clamp(15px, 2vh, 18px)/1.2 var(--font-display);
+  letter-spacing: .03em;
+  color: var(--text);
+}
+
+.item-level {
+  flex: none;
+  font: 700 clamp(13px, 1.7vh, 15px)/1 var(--font-display);
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.item-desc {
+  flex: 1 1 auto;
+  font: 400 clamp(13px, 1.75vh, 15px)/1.4 var(--font-ui);
+  color: var(--muted);
+}
+
+.item-status { color: var(--text); }
+
+.item-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.item-foot .amount { font-size: clamp(16px, 2.2vh, 20px); }
+
+.btn.buy {
+  min-width: 7.2em;
+  min-height: clamp(34px, 4.6vh, 40px);
+  justify-content: center;
+  font-size: clamp(14px, 1.8vh, 15px);
+}
+
+.shop-item.maxed .item-name, .shop-item.maxed .item-desc { opacity: .55; }
+.shop-item.maxed .item-level { color: var(--teal); }
+.shop-item.bought, .restock.bought { animation: bought .8s ease-out; }
+
+@keyframes bought {
+  from { background-color: rgba(42, 209, 176, .38); }
+}
+
+.shop-foot {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* Narrower views: the rows of figures and the grids fold. */
+@media (max-width: 900px) {
+  .howto-columns { grid-template-columns: minmax(0, 1fr); }
+  .shop-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 760px) {
+  .figures { grid-auto-flow: row; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .restock { grid-template-columns: minmax(0, 1fr) auto; }
+  .restock .btn { grid-column: 1 / -1; }
+}
+
+@media (max-width: 560px) {
+  .shop-grid { grid-template-columns: minmax(0, 1fr); }
+  .controls td.keys { width: auto; }
+}
+
+/* Reduced motion (the system's setting, or the game's): the screens, the name and the rating only fade in. */
+@media (prefers-reduced-motion: reduce) {
+  .panel, .logo span, .rating { animation: fade-in .2s ease-out both; }
+}
+.reduce-motion .panel, .reduce-motion .logo span, .reduce-motion .rating { animation: fade-in .2s ease-out both; }
 
 #fatal {
   position: absolute;

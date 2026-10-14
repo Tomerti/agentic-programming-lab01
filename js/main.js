@@ -1,8 +1,8 @@
 // Boots the game and runs the frame loop: the scene, the world outside under the day/night lighting, the
 // control room with its monitors and console controls, the game session that they show and drive, the
-// rockets, interceptors, explosions, shakes and siren that show its events, and the 2D HUD over the view (the
-// resources bar, the mission line, toasts and banners). The campaign starts at once for now. Later tasks
-// bring the screens and audio.
+// rockets, interceptors, explosions, shakes and siren that show its events, the 2D HUD over the view (the
+// resources bar, the mission line, toasts and banners), and the screens and the shop over it all. The game
+// opens on the title screen. The audio arrives in Task 16, the rest of the keyboard in Task 17.
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { TIMING, WORLD } from './config.js';
@@ -19,6 +19,8 @@ import { createProjectiles } from './scene/projectiles.js';
 import { buildRoom } from './scene/room.js';
 import { createScene } from './scene/scene.js';
 import { createHud } from './ui/hud.js';
+import { createScreens } from './ui/screens.js';
+import { createShop } from './ui/shop.js';
 
 const MAX_DT = 0.1; // seconds: a hidden tab or a long frame must not jump the clock
 // The window's centre, world (0, 1.9, −2.6), in the outside group's coordinates, which the session's positions use.
@@ -124,6 +126,43 @@ for (const [type, react] of Object.entries(reactions)) bus.on(type, react);
 // no sound until the audio arrives (Task 16).
 const hud = createHud({ root: document.getElementById('app'), bus, session, settings, onLowResource: () => {} });
 
+// The screens and the shop take turns in the overlay container, one at a time. While it holds one, the room gets no
+// pointer input (see the pointer handlers and the frame loop). The settings screen changes `settings` in place: the
+// effects and the HUD read it as they go, the shadows are switched here, and the audio (Task 16, none yet) is told
+// by the screen itself.
+const overlay = document.getElementById('overlay');
+const audio = null;
+const screens = createScreens({
+  root: overlay, session, persistence, settings, audio, hud,
+  onSettingsChange: () => scene.setShadows(settings.shadows !== false),
+});
+const shop = createShop({ root: overlay, session, economy: session.economy });
+const screenShown = () => overlay.childElementCount > 0;
+
+// Which screen the session's events bring up. A round starting clears whatever screen started it.
+const flow = {
+  'round:start': () => {
+    shop.close();
+    screens.hide();
+  },
+  // The last campaign round ends in victory, whose own screen follows at once.
+  'round:end': ({ summary }) => {
+    if (state.phase !== 'victory') screens.show('summary', summary);
+  },
+  'shop:open': () => {
+    hud.hide();
+    shop.open();
+  },
+  'coins:changed': () => shop.render(),
+  'game:over': ({ summary }) => screens.show('gameover', summary),
+  // The campaign is over: no checkpoint is left to continue from.
+  'campaign:victory': ({ summary, rating }) => {
+    persistence.clearCheckpoint();
+    screens.show('victory', { summary, rating });
+  },
+};
+for (const [type, react] of Object.entries(flow)) bus.on(type, react);
+
 // Presses a control the way a click on it does: points at it, picks what is under the pointer and clicks.
 // True when the click hit something. The pick uses the control's own position even when it is off screen,
 // where the scene's pointer stops at the edge.
@@ -136,25 +175,45 @@ function clickControl(name) {
 }
 
 Object.assign(game, {
-  scene, outside, room, monitors, session, controls, bus, projectiles, effects, hud, debug: { clickControl },
+  scene, outside, room, monitors, session, controls, bus, projectiles, effects, hud, screens, shop,
+  debug: { clickControl },
 });
 
+// The pointer acts on the room only while it is over the canvas: not over a screen, not outside the window. The HUD
+// lets the pointer through, so a move over it is a move over the canvas.
 const canvas = scene.renderer.domElement;
+let pointerOnRoom = false;
 function pointAt(event) {
   const rect = canvas.getBoundingClientRect();
   scene.setPointer(((event.clientX - rect.left) / rect.width) * 2 - 1, 1 - ((event.clientY - rect.top) / rect.height) * 2);
 }
-window.addEventListener('pointermove', pointAt);
+window.addEventListener('pointermove', event => {
+  pointerOnRoom = event.target === canvas;
+  if (pointerOnRoom) pointAt(event);
+});
+for (const type of ['pointerleave', 'pointercancel']) canvas.addEventListener(type, () => { pointerOnRoom = false; });
 // A press acts at once, on the primary button, and picks again first: the pointer may have moved since the
 // last frame (a touch has no hover at all).
 canvas.addEventListener('pointerdown', event => {
-  if (event.button !== 0) return;
+  if (event.button !== 0 || screenShown()) return;
+  pointerOnRoom = true;
   pointAt(event);
   controls.update(0, scene.pointer);
   controls.click();
 });
 
-session.startCampaign();
+// Esc pauses a round being played and resumes it from the pause screen.
+window.addEventListener('keydown', event => {
+  if (event.key !== 'Escape' || event.repeat) return;
+  if (screens.current === 'pause') {
+    session.resume();
+    screens.hide();
+  } else if (!screenShown() && session.pause()) {
+    screens.show('pause');
+  }
+});
+
+screens.show('title');
 
 let last = performance.now();
 function frame(now) {
@@ -166,7 +225,9 @@ function frame(now) {
   projectiles.sync(state);
   hour = typeof game.debugHour === 'number' ? game.debugHour : state.clockHour;
   room.update(dt);
-  controls.update(dt, scene.pointer);
+  // Behind a screen the room has no pointer: no control lights up, and the view comes to rest facing the window.
+  if (screenShown()) scene.setPointer(0, 0);
+  controls.update(dt, pointerOnRoom && !screenShown() ? scene.pointer : null);
   monitors.update(dt);
   hud.update(dt);
   outside.applyLighting(lightingFor(hour), scene);
