@@ -7,6 +7,7 @@
 // pointer away from the room while one is up. `settings` is the object that the scene, the effects and the HUD
 // read: the settings screen changes it in place, saves it and reports the change.
 import { ECONOMY, ROUNDS } from '../config.js';
+import { formatCoins } from '../game/economy.js';
 
 // The screens that hide the HUD. The pause screen dims the round with its HUD, and settings and how to play leave
 // the HUD as the screen that opened them had it.
@@ -32,9 +33,10 @@ export function h(tag, attrs = {}, ...children) {
   return el;
 }
 
-// The HUD's coin, and an amount of coins: the coin, then the number with an optional sign.
+// The HUD's coin, and an amount of coins: the coin, then the number with an optional sign, written as the HUD writes
+// the coins (formatCoins).
 export const coin = () => h('span', { class: 'coin', 'aria-hidden': 'true' });
-export const amount = (value, sign = '') => h('span', { class: 'amount' }, coin(), `${sign}${value}`);
+export const amount = (value, sign = '') => h('span', { class: 'amount' }, coin(), `${sign}${formatCoins(value)}`);
 
 // A button: `kind` 'primary' (the screen's main action), 'danger' or none; `note` a second, smaller text in it,
 // such as why it is disabled.

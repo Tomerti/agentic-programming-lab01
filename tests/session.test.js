@@ -401,12 +401,13 @@ test('alert pays 40 once per populated track; auto-alert does it on detection', 
   assert.deepEqual([state.coins, state.score, state.stats.round.alerts, state.stats.round.missionsDone], [1000 + 40 + 150, 190, 1, 1]);
   assert.deepEqual(payloads(events, 'coins:changed').map(p => p.reason).sort(), ['alert', 'mission']);
   assert.ok(state.log.includes('ALERT · GILO'));
-  assert.deepEqual(session.soundAlert(), { ok: false, reason: 'noTarget' }, 'once per track');
-  assert.deepEqual(events.at(-1), ['alert:sounded', { inTime: false }]);
+  assert.deepEqual(session.soundAlert(), { ok: false, reason: 'alreadyAlerted' }, 'once per track');
+  assert.deepEqual(events.at(-1), ['alert:sounded', { inTime: false, reason: 'alreadyAlerted' }]);
   assert.equal(state.coins, 1190);
   state.threats.push(craft({ id: 1, zone: 'open' }));
   session.selectTrack(1);
   assert.deepEqual(session.soundAlert(), { ok: false, reason: 'noTarget' }, 'an open-area track has no one to warn');
+  assert.deepEqual(events.at(-1), ['alert:sounded', { inTime: false, reason: 'noTarget' }]);
   // With the Auto-alert system each populated track is alerted as it is detected.
   const auto = setup();
   auto.session.startCampaign();
@@ -645,7 +646,7 @@ test('ALERT refuses a decoy that the Signature analyzer reveals', () => {
   state.threats.push(decoy);
   assert.equal(session.selectTrack(1), true);
   assert.deepEqual(session.soundAlert(), { ok: false, reason: 'noTarget' });
-  assert.deepEqual(events.at(-1), ['alert:sounded', { inTime: false }]);
+  assert.deepEqual(events.at(-1), ['alert:sounded', { inTime: false, reason: 'noTarget' }]);
   assert.deepEqual([decoy.alerted, state.coins, state.stats.round.alerts], [false, 1000, 0]);
 });
 

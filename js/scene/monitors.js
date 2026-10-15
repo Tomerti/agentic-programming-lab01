@@ -12,6 +12,7 @@ import { WORLD, THREATS } from '../config.js';
 import { timeToImpact } from '../game/threats.js';
 import { sortedDetectedThreats } from '../game/session.js';
 import { formatClock, phaseName } from '../game/daynight.js';
+import { formatCoins } from '../game/economy.js';
 
 const TAU = Math.PI * 2;
 const FRAME = 1 / 24; // seconds between redraws
@@ -387,7 +388,7 @@ export function drawResources(ctx, view, state, opts = {}) {
 
   text(ctx, 'COINS', 18, 64, { size: 17, color: C.muted });
   drawCoin(ctx, 38, 99, 18);
-  text(ctx, state.coins.toLocaleString('en-US'), 66, 120, { size: 58, color: C.gold, maxWidth: right - 66 });
+  text(ctx, formatCoins(state.coins), 66, 120, { size: 58, color: C.gold, maxWidth: right - 66 });
 
   text(ctx, 'INTERCEPTORS', 18, 152, { size: 17, color: C.muted });
   text(ctx, `${state.ammo} / ${state.ammoCapacity}`, right, 154, { size: 24, align: 'right' });

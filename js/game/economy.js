@@ -4,6 +4,10 @@
 // ECONOMY, SHOP, THREATS and WORLD in config.js.
 import { ECONOMY, SHOP, THREATS, WORLD } from '../config.js';
 
+// An amount of coins as every view writes it, grouped by thousands: 1,200. Anything but a finite number is written
+// as it is.
+export const formatCoins = coins => (Number.isFinite(coins) ? coins.toLocaleString('en-US') : String(coins));
+
 // An economy over `state`. The state is read on every call and never copied, so the session may change it
 // between calls, even swap in a new upgrades object. `config` is the tables to read; tests pass their own.
 export function createEconomy(state, config = { ECONOMY, SHOP, THREATS, WORLD }) {

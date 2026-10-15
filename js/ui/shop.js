@@ -6,6 +6,7 @@
 // and every purchase is a session command. The panel is drawn again after each purchase, and render() draws it
 // again when something else changed the coins.
 import { SHOP } from '../config.js';
+import { formatCoins } from '../game/economy.js';
 import { amount, button, coin, focusIn, h, screenElement } from './screens.js';
 
 // What a button says when it cannot be pressed, by the economy's reason.
@@ -40,7 +41,7 @@ export function createShop({ root, session, economy = session.economy }) {
           h('span', { class: 'title-round' }, ` · Before round ${state.round + 1}`))),
       h('div', { class: 'balance' },
         h('span', { class: 'balance-label' }, 'Balance'),
-        h('span', { id: 'shop-balance' }, coin(), String(state.coins))));
+        h('span', { id: 'shop-balance' }, coin(), formatCoins(state.coins))));
   }
 
   // Interceptors are bought to fill the launcher. When the coins do not cover all that are missing, the button

@@ -533,15 +533,17 @@ export function createSession({ config = CONFIG, rng, persistence, bus }) {
     coinsChanged(ECONOMY.alertReward, 'alert');
   }
 
-  // Sounds the alert for the selected track, or with none selected the most urgent one. Refused (alert:sounded with
-  // inTime false) when that track does not count as populated or was alerted already. An unrevealed decoy is
-  // alerted and paid like a rocket, so ALERT cannot tell them apart.
+  // Sounds the alert for the selected track, or with none selected the most urgent one. Refused, with alert:sounded
+  // { inTime: false, reason } and the same reason returned, when there is no such track or it does not count as
+  // populated ('noTarget') or it was alerted already ('alreadyAlerted'). An unrevealed decoy is alerted and paid
+  // like a rocket, so ALERT cannot tell them apart.
   function soundAlert() {
     if (state.phase !== 'wave') return { ok: false, reason: 'phase' };
     const target = selectedTrack() ?? mostUrgent();
-    if (!target || !countsAsPopulated(target) || target.alerted) {
-      emit('alert:sounded', { inTime: false });
-      return { ok: false, reason: 'noTarget' };
+    const reason = !target || !countsAsPopulated(target) ? 'noTarget' : target.alerted ? 'alreadyAlerted' : null;
+    if (reason) {
+      emit('alert:sounded', { inTime: false, reason });
+      return { ok: false, reason };
     }
     alertFor(target);
     return { ok: true };

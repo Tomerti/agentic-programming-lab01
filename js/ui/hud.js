@@ -6,6 +6,7 @@
 // event has been handled. It builds its markup in the empty containers of index.html, found inside `root`.
 import { ECONOMY, THREATS, WORLD } from '../config.js';
 import { formatClock, phaseName } from '../game/daynight.js';
+import { formatCoins } from '../game/economy.js';
 import { timeToImpact } from '../game/threats.js';
 
 // The low-resource thresholds (spec §8) and the HUD's timings, in seconds.
@@ -33,6 +34,11 @@ const REFUSALS = Object.freeze({
   ammo: 'No interceptors left: restock in the shop',
   noTarget: 'No track to engage',
   alreadyEngaged: 'Interceptor already in flight',
+});
+// What a refused ALERT says, by the session's reason (spec §6).
+const ALERT_REFUSALS = Object.freeze({
+  noTarget: 'No populated track to alert',
+  alreadyAlerted: 'Already alerted',
 });
 
 const TOAST_KINDS = ['info', 'warn', 'good'];
@@ -136,7 +142,7 @@ export function createHud({ root, bus, session, settings = {}, onLowResource = (
     {
       id: 'coins',
       key: () => String(state.coins),
-      paint: ({ num }) => { num.textContent = state.coins; },
+      paint: ({ num }) => { num.textContent = formatCoins(state.coins); },
       isLow: () => state.coins < HUD.lowCoinShots * economy.shotCost(),
     },
     {
@@ -344,9 +350,11 @@ export function createHud({ root, bus, session, settings = {}, onLowResource = (
     showBanner({ title, subtitle, seconds: HUD.roundBanner });
   }
 
-  // The small wave banner. It waits for a banner on screen: a round's first wave starts under the round banner.
-  function waveBanner(wave, count) {
-    const next = { title: `WAVE ${wave} / ${count}`, small: true, seconds: HUD.waveBanner };
+  // The small wave banner, which names a wave whose threats all fall on open ground (the wave that the holdWave
+  // mission asks HOLD FIRE for). It waits for a banner on screen: a round's first wave starts under the round banner.
+  function waveBanner(wave, count, openOnly = false) {
+    const title = `WAVE ${wave} / ${count}${openOnly ? ' · OPEN GROUND' : ''}`;
+    const next = { title, small: true, seconds: HUD.waveBanner };
     if (bannerLeft > 0) nextBanner = next;
     else showBanner(next);
   }
@@ -419,13 +427,13 @@ export function createHud({ root, bus, session, settings = {}, onLowResource = (
       const phaseNow = (phase ?? phaseName(state.clockHour)).toUpperCase();
       banner(`ROUND ${round}`, `${phaseNow} · ${waveCount ?? state.waveCount} waves`);
     },
-    'wave:start': ({ wave, count }) => waveBanner(wave, count),
+    'wave:start': ({ wave, count, openOnly }) => waveBanner(wave, count, openOnly),
     'engage:refused': ({ reason }) => {
       if (Object.hasOwn(REFUSALS, reason)) toast(REFUSALS[reason], 'warn');
     },
-    'alert:sounded': ({ inTime, zoneName }) => {
-      if (inTime) toast(`Alert sounded in ${zoneName} · +${ECONOMY.alertReward}${COIN}`, 'good');
-      else toast('No populated track to alert', 'warn');
+    'alert:sounded': ({ inTime, zoneName, reason }) => {
+      if (inTime) toast(`Alert sounded in ${zoneName} · +${formatCoins(ECONOMY.alertReward)}${COIN}`, 'good');
+      else toast(Object.hasOwn(ALERT_REFUSALS, reason) ? ALERT_REFUSALS[reason] : ALERT_REFUSALS.noTarget, 'warn');
     },
     'hq:line': ({ text }) => toast(text, 'info'),
     'hazard:jamming': ({ on }) => {
@@ -434,7 +442,7 @@ export function createHud({ root, bus, session, settings = {}, onLowResource = (
     // Named, so that two missions completing at once give two toasts, not one merged one.
     'mission:complete': ({ id, reward }) => {
       const mission = state.missions.find(m => m.id === id);
-      toast(`Mission complete: ${mission ? `${mission.text} · ` : ''}+${reward}${COIN}`, 'good');
+      toast(`Mission complete: ${mission ? `${mission.text} · ` : ''}+${formatCoins(reward)}${COIN}`, 'good');
     },
     'tutorial:show': ({ text }) => toast(text, 'info', HUD.tutorialToast),
     'game:over': hide,

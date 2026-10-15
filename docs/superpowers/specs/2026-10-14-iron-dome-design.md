@@ -256,9 +256,10 @@ and the ceiling lights (room light never drops below a playable level).
 - **ALERT** (amber button, `A`): sounds the alert for the selected track's neighborhood
   (or the most urgent populated track). If that track is populated and still inbound:
   +40 coins and `alert:sounded {inTime: true}`; a neighborhood can be alerted once per
-  track. Otherwise a toast "No populated track to alert". The siren beacon spins for 4 s
-  either way. The Auto-Alert upgrade sounds it automatically on detection of each
-  populated track (paying the +40).
+  track. Otherwise `alert:sounded {inTime: false, reason}` and a toast: "Already alerted"
+  when the track was alerted before (`alreadyAlerted`), "No populated track to alert"
+  otherwise (`noTarget`). The siren beacon spins for 4 s either way. The Auto-Alert
+  upgrade sounds it automatically on detection of each populated track (paying the +40).
 - **HOLD FIRE** (blue latching button with lamp, `H`): blocks ENGAGE while on. Exists for
   missions and to make accidental shots impossible during open-area waves.
 - **RESET RADAR** (square button with lamp): clears jamming.
@@ -351,7 +352,9 @@ current max), ROUND · WAVE, CLOCK (hh:mm with a sun/moon glyph), SCORE. A numbe
 changes pops briefly. Low state (coins < 2 × shotCost, or ammo ≤ 3, or lives ≤ 2) pulses
 red and plays a warning beep (rate-limited to once per 8 s). Below the bar: the mission
 line with progress and the selected track's summary. Toasts bottom-centre; round banners
-("ROUND 3 · DUSK") centre on `round:start`; a tutorial toast queue in rounds 1–2.
+("ROUND 3 · DUSK") centre on `round:start`, and a small wave banner on `wave:start`
+("WAVE 3 / 4 · OPEN GROUND" for a wave that falls only on open ground, the one the
+holdWave mission means); a tutorial toast queue in rounds 1–2.
 
 ### Shake and flashes
 

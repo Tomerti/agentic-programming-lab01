@@ -1,5 +1,5 @@
 import { test } from 'node:test'; import assert from 'node:assert/strict';
-import { createEconomy } from '../js/game/economy.js';
+import { createEconomy, formatCoins } from '../js/game/economy.js';
 import { ECONOMY, SHOP, THREATS, WORLD } from '../js/config.js';
 const fresh = () => ({ coins: 1000, ammo: 20, ammoCapacity: 20, lives: 5, maxLives: 5, upgrades: {} });
 test('derived values follow upgrade levels', () => { const s = fresh(); const e = createEconomy(s); assert.equal(e.shotCost(), 80); assert.equal(e.hitChance(), 0.85); assert.equal(e.detectionRange(), 14); assert.equal(e.fireCooldown(), 1.2); s.upgrades = { cheaper: 3, seekers: 3, radar: 3, rapid: 1 }; assert.equal(e.shotCost(), 50); assert.ok(Math.abs(e.hitChance() - 1.0) < 1e-9); assert.equal(e.detectionRange(), 20); assert.equal(e.fireCooldown(), 0.6); });
@@ -215,4 +215,9 @@ test('only the economy fields of the state are touched', () => {
   e.restock(); e.spend(10); e.earn(10); e.rewardFor('rocket'); e.stipend(2);
   assert.deepEqual(Object.keys(s).sort(), [...Object.keys(fresh()), ...Object.keys(others)].sort());
   for (const key of Object.keys(others)) assert.deepEqual(s[key], others[key], key);
+});
+
+test('formatCoins writes coins grouped by thousands, as the HUD, the resources monitor and the shop show them', () => {
+  assert.deepEqual([0, 80, 999, 1000, 1200, 1234567, -1200].map(formatCoins), ['0', '80', '999', '1,000', '1,200', '1,234,567', '-1,200']);
+  assert.deepEqual([NaN, 'abc'].map(formatCoins), ['NaN', 'abc']);
 });
