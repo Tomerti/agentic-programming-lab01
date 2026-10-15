@@ -310,6 +310,10 @@ export function createHud({ root, bus, session, settings = {}, onLowResource = (
     }
   }
 
+  function clearToasts() {
+    for (const item of [...toasts]) dropToast(item);
+  }
+
   // --- Banners ---
 
   const bannerTitle = bannerBox.querySelector('.banner-title');
@@ -372,12 +376,15 @@ export function createHud({ root, bus, session, settings = {}, onLowResource = (
     refresh();
   }
 
+  // Hides the bar and the mission line and clears the banners and the toasts, so that none lingers under the screen
+  // that hid the HUD (the title, a summary, the shop): what they said belongs to the round.
   function hide() {
     shown = false;
     bar.hidden = true;
     missionLine.hidden = true;
     nextBanner = null;
     clearBanner();
+    clearToasts();
   }
 
   let reduced = null; // whether the reduce-motion class is on
