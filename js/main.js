@@ -1,9 +1,8 @@
 // Boots the game and runs the frame loop: the scene, the world outside under the day/night lighting, the
 // control room with its monitors and console controls, the game session that they show and drive, the
 // rockets, interceptors, explosions, shakes and siren that show its events, the sound of its events and of
-// the controls, the 2D HUD over the view (the resources bar, the mission line, toasts and banners), and the
-// screens and the shop over it all. The game opens on the title screen. The rest of the keyboard arrives in
-// Task 17.
+// the controls, the 2D HUD over the view (the resources bar, the mission line, toasts and banners), the
+// screens and the shop over it all, and the keyboard. The game opens on the title screen.
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { createAudio } from './audio.js';
@@ -57,27 +56,34 @@ const { state } = session;
 const audio = createAudio(settings, { onMutedChange: () => persistence.saveSettings(settings) });
 audio.bind(bus, session, { listener: WINDOW_CENTRE });
 
-let zoom = 1; // the radar zoom, 1× or 2×; the dial switches it
 let time = 0;
 let hour = state.clockHour; // the hour the scene is lit for and the screens show
 const monitors = createMonitorPainter(room.monitors, session, () => ({
   time,
   revealDecoys: session.revealsDecoys(),
-  zoom,
+  zoom: radarZoom(),
   phaseName: phaseName(hour),
   clockText: formatClock(hour),
 }));
 
-// A click on a screen selects the track whose radar blip or list row is under it, with a soft click. A jammed radar
-// shows none.
+// The radar zoom, 1× or 2×, is the range dial's setting and is kept nowhere else: a click on the dial and the Z key
+// both turn the dial. (Read only once the controls exist: by the painter's first frame and by clicks.)
+function radarZoom() {
+  return controls.controlsByName.dial.on ? 2 : 1;
+}
+
+// Selects a track with a soft click. Nothing happens for an id that is no track on radar.
+function pickTrack(id) {
+  if (id !== null && id !== undefined && session.selectTrack(id)) audio.play('click', { gain: 0.5 });
+}
+
+// A click on a screen selects the track whose radar blip or list row is under it. A jammed radar shows none.
 function selectOnScreen({ monitor, px, py }) {
   if (state.jammed) return;
   const tracks = sortedDetectedThreats(state);
   const { width, height } = room.monitors.radar;
-  let id = null;
-  if (monitor === 'radar') id = radarBlipAt(tracks, { width, height, zoom }, px, py);
-  else if (monitor === 'threats') id = threatRowAt(tracks, py);
-  if (id !== null && session.selectTrack(id)) audio.play('click', { gain: 0.5 });
+  if (monitor === 'radar') pickTrack(radarBlipAt(tracks, { width, height, zoom: radarZoom() }, px, py));
+  else if (monitor === 'threats') pickTrack(threatRowAt(tracks, py));
 }
 
 // The sound of each console control as it is pressed, as [sound, gain]: the big buttons click, the toggles, the lever,
@@ -89,14 +95,13 @@ const CONTROL_SOUNDS = Object.freeze({
   mug: ['clack', 0.45], clipboard: ['clack', 0.45],
 });
 // What each console control does. The lever, the toggles, the system buttons, the mug and the clipboard do nothing in
-// the game.
+// the game, and the dial only turns: the radar reads its zoom from it (radarZoom).
 const actions = {
   engage: () => session.engage(),
   alert: () => session.soundAlert(),
   hold: () => session.toggleHold(),
   resetRadar: () => session.resetRadar(),
   hq: () => session.callHQ(),
-  dial: () => { zoom = zoom === 1 ? 2 : 1; },
   monitor: selectOnScreen,
 };
 const controls = createControls({
@@ -192,14 +197,15 @@ const flow = {
 for (const [type, react] of Object.entries(flow)) bus.on(type, react);
 
 // Presses a control the way a click on it does: points at it, picks what is under the pointer and clicks.
-// True when the click hit something. The pick uses the control's own position even when it is off screen,
-// where the scene's pointer stops at the edge.
+// True when that control was under the pointer and pressed; false, and no click, when something else stands in
+// front of it (or it is unknown). The pick uses the control's own position even when it is off screen, where the
+// scene's pointer stops at the edge.
 function clickControl(name) {
   const at = controls.screenPositionOf(name);
   if (!at) return false;
   scene.setPointer(at.x, at.y);
   controls.update(0, at);
-  return controls.click();
+  return controls.hovered === name && controls.click();
 }
 
 Object.assign(game, {
@@ -230,16 +236,98 @@ canvas.addEventListener('pointerdown', event => {
   controls.click();
 });
 
-// Esc pauses a round being played and resumes it from the pause screen.
+// --- The keyboard ---
+
+// A key's name for the shortcuts: a letter or a digit as its key cap reads, in lower case, or, on a layout that does
+// not type Latin letters (Hebrew, say), the letter or digit of the same key on a US keyboard; any other key as
+// event.key has it (' ', 'Tab', 'Escape').
+function keyName({ key, code = '' }) {
+  if (/^[a-z0-9]$/i.test(key)) return key.toLowerCase();
+  const us = /^(?:Key([A-Z])|Digit([0-9]))$/.exec(code);
+  return us ? (us[1] ?? us[2]).toLowerCase() : key;
+}
+
+// Tab steps through the tracks in the threat list's order (Shift+Tab back), with the soft click of a pick on a screen;
+// a jammed radar shows none to step through.
+function stepTracks(dir) {
+  if (!state.jammed && session.cycleSelection(dir) !== null) audio.play('click', { gain: 0.5 });
+}
+
+// 1–5 pick that row of the threat list (sortedDetectedThreats, as the screen lists them).
+function selectRow(row) {
+  if (!state.jammed) pickTrack(sortedDetectedThreats(state)[row]?.id);
+}
+
+// M switches the sound off or on, saved like the settings screen's mute, and a toast says which.
+function toggleSound() {
+  hud.toast(audio.toggleMuted() ? 'Sound off' : 'Sound on');
+}
+
+// The console's keys (spec §6), by keyName(). A button's key presses it as a click does (controls.press), so the
+// button moves and clicks and runs the same action; Z turns the range dial. They act only while no screen is up, and
+// once per press: a key held down does not repeat, except Tab, which steps on through the tracks.
+const KEYS = {
+  ' ': () => controls.press('engage'),
+  a: () => controls.press('alert'),
+  h: () => controls.press('hold'),
+  r: () => controls.press('resetRadar'),
+  z: () => controls.press('dial'),
+  m: toggleSound,
+  Tab: event => stepTracks(event.shiftKey ? -1 : 1),
+  ...Object.fromEntries([1, 2, 3, 4, 5].map(n => [n, () => selectRow(n - 1)])),
+};
+const REPEATING_KEYS = new Set(['Tab']);
+
+// Esc pauses a round being played and resumes it from the pause screen. Every other key of KEYS is the room's only
+// while no screen is up (the pause screen takes Esc alone); a key that acts is kept from the page, where Space would
+// scroll and Tab move the focus. The browser's own shortcuts (Ctrl, Alt or Meta held) are left alone.
 window.addEventListener('keydown', event => {
-  if (event.key !== 'Escape' || event.repeat) return;
-  if (screens.current === 'pause') {
-    session.resume();
-    screens.hide();
-  } else if (!screenShown() && session.pause()) {
-    screens.show('pause');
+  if (event.ctrlKey || event.altKey || event.metaKey) return;
+  const name = keyName(event);
+  if (name === 'Escape') {
+    if (event.repeat) return;
+    if (screens.current === 'pause') {
+      event.preventDefault();
+      session.resume();
+      screens.hide();
+    } else if (screens.current === null && session.pause()) {
+      event.preventDefault();
+      screens.show('pause');
+    }
+    return;
   }
+  if (!Object.hasOwn(KEYS, name) || screens.current !== null) return;
+  event.preventDefault();
+  if (!event.repeat || REPEATING_KEYS.has(name)) KEYS[name](event);
 });
+
+// A screen that opens by itself (a round's summary, game over, victory, the shop) gives the keyboard to its main
+// button, which Space and Enter press. Meant for the console a moment too late, or held down as the screen opened,
+// they would press that button and skip the screen. So a screen takes Space and Enter only from SCREEN_KEY_DELAY ms
+// after it opened, and only a press that starts on it: before that, and for a key held down from before (its repeats
+// and its release, which presses a button too), the browser's default is prevented and the button stays up.
+const SCREEN_KEY_DELAY = 300; // ms
+const PRESS_KEYS = new Set([' ', 'Enter']);
+const pressedOnScreen = new Set(); // the PRESS_KEYS held down now that the screen shown has taken
+let screenOpenedAt = -Infinity; // performance.now() when the overlay last changed screens
+function screenChanged() {
+  screenOpenedAt = performance.now();
+  pressedOnScreen.clear(); // a key held down from the screen before is not this one's
+}
+const screenChanges = new MutationObserver(screenChanged);
+screenChanges.observe(overlay, { childList: true });
+function guardScreenKeys(event) {
+  if (!PRESS_KEYS.has(event.key)) return;
+  if (screenChanges.takeRecords().length) screenChanged(); // a change in this same task, not reported yet
+  if (event.type === 'keyup') {
+    if (!pressedOnScreen.delete(event.key) && screens.current !== null) event.preventDefault();
+  } else if (screens.current !== null) {
+    if (!event.repeat && performance.now() - screenOpenedAt >= SCREEN_KEY_DELAY) pressedOnScreen.add(event.key);
+    else if (!pressedOnScreen.has(event.key)) event.preventDefault();
+  }
+}
+window.addEventListener('keydown', guardScreenKeys, true);
+window.addEventListener('keyup', guardScreenKeys, true);
 
 screens.show('title');
 
