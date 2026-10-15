@@ -7,6 +7,11 @@
 .env.*
 !.env.example
 
+# Claude Code: local settings, personal notes, worktrees
+.claude/settings.local.json
+.claude/worktrees/
+CLAUDE.local.md
+
 # OS files
 .DS_Store
 Thumbs.db
