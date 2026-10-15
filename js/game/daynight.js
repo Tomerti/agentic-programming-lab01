@@ -32,8 +32,10 @@ export function lightingFor(hour, keyframes = DAYNIGHT.keyframes) {
   return lighting;
 }
 
-// The clock `dt` seconds later, wrapped past midnight.
+// The clock `dt` seconds later, wrapped past midnight. A dt that is not a finite number (a broken frame time) leaves
+// the hour as it was, rather than turning the clock into NaN for good.
 export function advanceClock(hour, dt, hoursPerSecond = DAYNIGHT.hoursPerSecond) {
+  if (!Number.isFinite(dt)) return hour;
   return wrapHour(hour + dt * hoursPerSecond);
 }
 
@@ -51,8 +53,10 @@ export function phaseName(hour) {
   return 'dusk';
 }
 
-// 'HH:MM' from the fractional hour (9.5 -> '09:30'); the minutes are floored, as on a clock.
+// 'HH:MM' from the fractional hour (9.5 -> '09:30'); the minutes are floored, as on a clock. The hour carries float
+// noise (wrapHour turns 7.2 into 7.199999999999999), so a hair is added before flooring: an exact minute shows as
+// itself, not as the minute before. The % 1440 keeps a time that rounds up to midnight at 00:00.
 export function formatClock(hour) {
-  const minutes = Math.floor(wrapHour(hour) * 60);
+  const minutes = Math.floor(wrapHour(hour) * 60 + 1e-6) % 1440;
   return `${pad2(Math.floor(minutes / 60))}:${pad2(minutes % 60)}`;
 }
