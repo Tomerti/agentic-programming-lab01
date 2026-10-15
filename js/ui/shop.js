@@ -19,7 +19,7 @@ const ITEMS = SHOP.filter(item => item.id !== 'restock'); // restock has its own
 export function createShop({ root, session, economy = session.economy }) {
   const host = typeof root === 'string' ? document.querySelector(root) : root;
   const { state } = session;
-  const panel = h('section', { class: 'panel shop', tabindex: -1 }); // focusable, for when no button can take the focus
+  const panel = h('section', { class: 'panel shop', tabindex: -1 }); // focusable: it takes the focus after a purchase
   const screen = screenElement('shop', 'Supply requisition', panel);
   const isOpen = () => screen.parentNode === host;
 
@@ -100,16 +100,15 @@ export function createShop({ root, session, economy = session.economy }) {
   }
 
   // Draws the panel anew and puts the focus back on the button that had it. A button that a purchase disabled hands
-  // it to the first Buy button still enabled, or else to the panel: never to Start round, where a second press of
-  // the key that bought would start the round.
+  // it to the panel, never to another button: a second press of the key that bought (a double tap, a held Enter)
+  // would buy that one too, or start the round. Tab moves on from the panel.
   function render() {
     if (!isOpen()) return;
     const key = focusedKey();
     panel.replaceChildren(header(), restockRow(), h('div', { class: 'shop-grid' }, ITEMS.map(itemCard)), footer());
     if (!key) return;
     const again = panel.querySelector(key);
-    const target = again && !again.disabled ? again : (panel.querySelector('[data-buy]:not(:disabled)') ?? panel);
-    target.focus({ preventScroll: true });
+    (again && !again.disabled ? again : panel).focus({ preventScroll: true });
   }
 
   function open() {

@@ -37,7 +37,7 @@ then open http://localhost:8000 (`npm run serve` runs the same command).
 | Radar zoom 1× / 2× | Range dial, left of the console | Z |
 | Call HQ for a hint about the open mission | Red phone | |
 | Sound off / on | Settings | M |
-| Pause / resume | Resume button | Esc |
+| Pause / resume | Resume button (pause screen) | Esc |
 
 The toggles, the lever, the system buttons, the mug and the clipboard move and make sounds but do nothing else.
 Keys act only while no screen is shown; on the pause screen Esc resumes.

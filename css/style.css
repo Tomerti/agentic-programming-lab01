@@ -474,7 +474,7 @@ html, body {
 .screen-gameover .panel, .screen-victory .panel { --panel-width: 760px; }
 .screen-howto .panel { --panel-width: 920px; }
 .shop { --panel-width: 1120px; }
-.shop:focus { outline: none; } /* the panel holds the focus only when no button can (shop.js) */
+.shop:focus { outline: none; } /* the panel holds the focus once a purchase disables the focused button (shop.js) */
 
 @keyframes panel-in {
   from { opacity: 0; transform: translateY(12px) scale(.985); }

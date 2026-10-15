@@ -8,7 +8,8 @@
 //
 // Comments are blanked out before the imports are looked for, so an import in a comment is
 // not checked; a statement starts at the start of a line or after a `;`, so a second import
-// on the same line is.
+// on the same line is, but not where that line start or `;` lies inside a string, a template
+// literal or a regular expression.
 //
 //   node scripts/check.mjs      prints "OK <n> files" and exits 0, or lists the problems and exits 1
 
@@ -35,13 +36,15 @@ function* walk(dir) {
 const isFile = path => existsSync(path) && statSync(path).isFile();
 const show = file => relative(root, file).replaceAll('\\', '/');
 
-// The source with its comments blanked out: each comment character becomes a space (a newline stays), so that the
-// statements around a comment keep their places. Strings, template literals and regular expression literals are
-// copied whole, so that a quote, a // or a /* inside one starts nothing. A / starts a regular expression where an
-// operand is due: at the start, or after one of ( , = : [ ! & | ? { } ; + - * % < > ~ ^ (a heuristic that the code
-// here follows; `return /x/` would be misread, and only that line's comment blanking could suffer).
-function blankComments(source) {
-  let out = '';
+// The source with its comments blanked out, and where its literals lie. Each comment character becomes a space (a
+// newline stays), so that everything keeps its offset. Strings, template literals and regular expression literals
+// are copied whole, so that a quote, a // or a /* inside one starts nothing, and `literals` lists their spans as
+// [start, end) offsets. A / starts a regular expression where an operand is due: at the start, or after one of
+// ( , = : [ ! & | ? { } ; + - * % < > ~ ^ (a heuristic that the code here follows; `return /x/` would be misread,
+// and only that line's comment blanking could suffer).
+function scan(source) {
+  let code = '';
+  const literals = [];
   let last = ''; // the last character of code before this point, spaces and comments aside
   let i = 0;
   while (i < source.length) {
@@ -51,7 +54,7 @@ function blankComments(source) {
     if (c === '/' && (next === '*' || next === '/')) {
       const close = next === '*' ? source.indexOf('*/', i + 2) : source.indexOf('\n', i + 2);
       end = close < 0 ? source.length : close + (next === '*' ? 2 : 0);
-      out += source.slice(i, end).replace(/[^\n]/g, ' ');
+      code += source.slice(i, end).replace(/[^\n]/g, ' ');
       i = end;
       continue;
     }
@@ -68,13 +71,18 @@ function blankComments(source) {
         if (c === '/' && (d === '[' || d === ']')) inClass = d === '[';
         else if (d === c && !inClass) break; // the closing quote, backtick or slash
       }
+      end = Math.min(end, source.length);
+      literals.push([i, end]);
     }
-    out += source.slice(i, end);
+    code += source.slice(i, end);
     if (!/^\s$/.test(c)) last = source[end - 1];
     i = end;
   }
-  return out;
+  return { code, literals };
 }
+
+// Whether offset `at` lies inside one of the literals: a `;` or a line start there begins no statement.
+const insideLiteral = (literals, at) => literals.some(([start, end]) => start < at && at < end);
 
 // The entries of each folder on disk, read once.
 const listings = new Map();
@@ -112,9 +120,10 @@ for (const file of files) {
       .map(line => line && `  ${line}`).join('\n').trimEnd();
     problems.push(`${show(file)}: syntax check failed\n${detail}`);
   }
-  const source = blankComments(readFileSync(file, 'utf8'));
+  const { code, literals } = scan(readFileSync(file, 'utf8'));
   for (const pattern of [IMPORT_FROM, IMPORT_BARE]) {
-    for (const [, specifier] of source.matchAll(pattern)) {
+    for (const { index, 1: specifier } of code.matchAll(pattern)) {
+      if (insideLiteral(literals, index)) continue; // text in a string, not a statement
       const target = resolve(dirname(file), specifier);
       if (!isFile(target)) {
         problems.push(`${show(file)}: import '${specifier}' does not resolve to a file`);

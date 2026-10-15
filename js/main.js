@@ -303,9 +303,10 @@ window.addEventListener('keydown', event => {
 
 // A screen that opens by itself (a round's summary, game over, victory, the shop) gives the keyboard to its main
 // button, which Space and Enter press. Meant for the console a moment too late, or held down as the screen opened,
-// they would press that button and skip the screen. So a screen takes Space and Enter only from SCREEN_KEY_DELAY ms
-// after it opened, and only a press that starts on it: before that, and for a key held down from before (its repeats
-// and its release, which presses a button too), the browser's default is prevented and the button stays up.
+// they would press that button and skip the screen. So on a screen the browser's default is prevented, and the
+// button stays up, for a Space or an Enter pressed less than SCREEN_KEY_DELAY ms after the screen opened (by the
+// key's own time stamp: a slow frame may hand the page the key later), for every repeat of a key held down (held,
+// a key presses a button once at most) and for the release of a key that the screen did not take.
 const SCREEN_KEY_DELAY = 300; // ms
 const PRESS_KEYS = new Set([' ', 'Enter']);
 const pressedOnScreen = new Set(); // the PRESS_KEYS held down now that the screen shown has taken
@@ -322,8 +323,8 @@ function guardScreenKeys(event) {
   if (event.type === 'keyup') {
     if (!pressedOnScreen.delete(event.key) && screens.current !== null) event.preventDefault();
   } else if (screens.current !== null) {
-    if (!event.repeat && performance.now() - screenOpenedAt >= SCREEN_KEY_DELAY) pressedOnScreen.add(event.key);
-    else if (!pressedOnScreen.has(event.key)) event.preventDefault();
+    if (event.repeat || event.timeStamp - screenOpenedAt < SCREEN_KEY_DELAY) event.preventDefault();
+    else pressedOnScreen.add(event.key);
   }
 }
 window.addEventListener('keydown', guardScreenKeys, true);
