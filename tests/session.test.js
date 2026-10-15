@@ -809,6 +809,27 @@ test('a retry of round 1 starts it at once; Continue goes straight into the roun
   assert.deepEqual([state.round, state.wave, state.phase, state.coins, state.lives], [3, 1, 'wave', cp.coins, cp.lives]);
 });
 
+test('stored data of the wrong type keeps the defaults: a checkpoint\'s coins, an endlessStart\'s numbers and upgrades', () => {
+  const storage = memStorage();
+  const persistence = createPersistence(storage);
+  const session = createSession({ rng: seq(), persistence, bus: createBus() });
+  const { state } = session;
+  storage.setItem('irondome.v1.checkpoint', JSON.stringify({ mode: 'campaign', round: 3, coins: 'abc', lives: 2, upgrades: { radar: 'x' } }));
+  session.startCampaign({ fromCheckpoint: true });
+  assert.deepEqual([state.round, state.coins, state.lives, state.upgrades], [3, ECONOMY.startCoins, 2, {}]);
+  assert.equal(session.economy.shotCost(), ECONOMY.shotCost);
+  const endlessFrom = endlessStart => {
+    persistence.saveRecords({ campaignVictory: true, endlessStart });
+    session.startEndless();
+    return [state.coins, state.ammo, state.ammoCapacity, state.maxLives, state.lives, state.upgrades];
+  };
+  const DEFAULTS = [ECONOMY.startCoins, ECONOMY.ammoCapacity, ECONOMY.ammoCapacity, ECONOMY.maxLives, ECONOMY.maxLives, {}];
+  assert.deepEqual(endlessFrom({ coins: null, ammo: 'lots', ammoCapacity: 30, maxLives: '7', upgrades: 'all' }), [...DEFAULTS.slice(0, 2), 30, ...DEFAULTS.slice(3)]);
+  assert.deepEqual(endlessFrom({ coins: 5000, upgrades: { seekers: 2, radar: '3' } }), [5000, ...DEFAULTS.slice(1, 5), { seekers: 2 }]);
+  assert.deepEqual(endlessFrom([1, 2]), DEFAULTS);
+  assert.deepEqual(endlessFrom('corrupt'), DEFAULTS);
+});
+
 test('Endless scores time survived, keeps no checkpoint, and game over records the best round and score', () => {
   const { session, state, persistence } = setup();
   session.startEndless();

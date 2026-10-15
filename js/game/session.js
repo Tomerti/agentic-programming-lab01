@@ -6,7 +6,7 @@
 // listen to the events on the bus, nothing else. Pure logic: the generator, the persistence and the bus are
 // injected and time passes only through update(dt). The numbers are the tables in config.js (spec §2, §4 to §7).
 import * as CONFIG from '../config.js';
-import { createInitialState, emptyStats, checkpointFrom, applyCheckpoint } from './state.js';
+import { createInitialState, emptyStats, checkpointFrom, applyCheckpoint, finiteEntries, isPlainObject } from './state.js';
 import { createThreat, advanceThreat, isDetectable, timeToImpact } from './threats.js';
 import { createInterceptor, advanceInterceptor } from './interceptors.js';
 import { createEconomy } from './economy.js';
@@ -218,13 +218,16 @@ export function createSession({ config = CONFIG, rng, persistence, bus }) {
   }
 
   // Endless, from the round after the campaign. After a campaign victory it starts with that victory's coins,
-  // interceptors, launcher capacity, shelters and upgrades, and every life.
+  // interceptors, launcher capacity, shelters and upgrades, and every life. The records come from storage and may
+  // hold anything: a number that is not a finite number, or upgrades that are not an object, keep the new game's.
   function startEndless() {
     const start = persistence.loadRecords().endlessStart;
     newGame('endless');
-    if (start && typeof start === 'object') {
-      for (const field of ['coins', 'ammo', 'ammoCapacity', 'maxLives']) state[field] = start[field] ?? state[field];
-      state.upgrades = { ...start.upgrades };
+    if (isPlainObject(start)) {
+      for (const field of ['coins', 'ammo', 'ammoCapacity', 'maxLives']) {
+        if (Number.isFinite(start[field])) state[field] = start[field];
+      }
+      if (isPlainObject(start.upgrades)) state.upgrades = finiteEntries(start.upgrades);
       state.lives = state.maxLives;
     }
     startRound(ROUNDS.length + 1);

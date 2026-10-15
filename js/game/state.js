@@ -48,9 +48,22 @@ export function createInitialState(config = { ECONOMY, DAYNIGHT }) {
   };
 }
 
-// The plain fields a checkpoint carries. Its other two, upgrades and totalStats, are objects of numbers and are
-// copied.
-const CHECKPOINT_FIELDS = ['mode', 'round', 'coins', 'ammo', 'ammoCapacity', 'lives', 'maxLives', 'score', 'clockHour'];
+// The plain fields a checkpoint carries: the mode and these numbers. Its other two, upgrades and totalStats, are
+// objects of numbers and are copied.
+const NUMBER_FIELDS = ['round', 'coins', 'ammo', 'ammoCapacity', 'lives', 'maxLives', 'score', 'clockHour'];
+const CHECKPOINT_FIELDS = ['mode', ...NUMBER_FIELDS];
+const MODES = ['campaign', 'endless']; // the values of `mode`
+
+// Whether a value is an object: not null, a number, a string, a boolean or an array, any of which stored JSON may
+// hold instead.
+export const isPlainObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+
+// The entries of `value` that are finite numbers, in a fresh object; {} when `value` is not an object. Stored data
+// may hold anything: an upgrade level or a counter that is not a number must not reach the arithmetic.
+export function finiteEntries(value) {
+  if (!isPlainObject(value)) return {};
+  return Object.fromEntries(Object.entries(value).filter(([, v]) => Number.isFinite(v)));
+}
 
 // The progress that a retry or a later session starts a round from, as plain data that can go through JSON and
 // shares nothing with the state: playing on does not change a checkpoint that was already taken.
@@ -64,15 +77,18 @@ export function checkpointFrom(state) {
 
 // Puts the checkpoint into `state`, in place, and returns the state. The round begins again: nothing of the
 // round that was running comes along, and the round and wave stats restart. A checkpoint may lack fields, an
-// older save for example: the state keeps its value for a field the checkpoint lacks, but a counter in the
-// total stats that the checkpoint lacks counts from zero.
+// older save for example, or hold damaged ones: the state keeps its value for a number that is missing or not a
+// finite number, for a mode that is not one, and for upgrades that are not an object, whose levels that are not
+// numbers are dropped; a counter in the total stats that the checkpoint lacks, or holds as anything but a number,
+// counts from zero.
 export function applyCheckpoint(state, cp) {
-  for (const field of CHECKPOINT_FIELDS) state[field] = cp[field] ?? state[field];
-  state.upgrades = { ...(cp.upgrades ?? state.upgrades) };
+  for (const field of NUMBER_FIELDS) if (Number.isFinite(cp[field])) state[field] = cp[field];
+  if (MODES.includes(cp.mode)) state.mode = cp.mode;
+  state.upgrades = isPlainObject(cp.upgrades) ? finiteEntries(cp.upgrades) : { ...state.upgrades };
   Object.assign(state, emptyRound());
   state.stats.round = emptyStats();
   state.stats.wave = emptyWaveStats();
-  state.stats.total = { ...emptyStats(), ...cp.totalStats };
+  state.stats.total = { ...emptyStats(), ...finiteEntries(cp.totalStats) };
   return state;
 }
 
@@ -94,9 +110,6 @@ export const DEFAULT_SETTINGS = Object.freeze({ volume: 0.8, muted: false, reduc
 const DEFAULT_RECORDS = {
   campaignVictory: false, bestRating: null, bestEndlessRound: 0, bestEndlessScore: 0, endlessStart: null,
 };
-
-// Whether parsed JSON is an object: not null, a number, a string, a boolean or an array.
-const isPlainObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 
 // Saves and loads through `storage`: an object with getItem, setItem and removeItem like the browser's local
 // storage, or null (undefined too) where there is none. Storage can be missing, full or denied, and what it

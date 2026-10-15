@@ -117,6 +117,21 @@ test('a checkpoint that lacks fields leaves the state its own values for them; m
   assert.doesNotThrow(() => applyCheckpoint(createInitialState(), {}));
 });
 
+test('a checkpoint field of the wrong type leaves the state its own value; levels and counters that are not numbers are dropped', () => {
+  const s = createInitialState();
+  s.upgrades = { radar: 1 };
+  applyCheckpoint(s, {
+    mode: 'arcade', round: '3', coins: 'abc', ammo: NaN, ammoCapacity: Infinity, lives: true, maxLives: [6], score: {},
+    clockHour: '12', upgrades: 'radar', totalStats: { shots: '5', alerts: 2, intercepted: null },
+  });
+  assert.deepEqual([s.mode, s.round, s.coins, s.ammo, s.ammoCapacity, s.lives, s.maxLives, s.score, s.clockHour], ['campaign', 0, 1000, 20, 20, 5, 5, 0, 10]);
+  assert.deepEqual(s.upgrades, { radar: 1 });
+  assert.deepEqual(s.stats.total, { ...ZERO_STATS, alerts: 2 });
+  applyCheckpoint(s, { upgrades: { radar: 2, cheaper: 'max', seekers: null, rapid: 1 }, totalStats: [4, 5] });
+  assert.deepEqual(s.upgrades, { radar: 2, rapid: 1 });
+  assert.deepEqual(s.stats.total, ZERO_STATS);
+});
+
 test('with no storage, or storage that throws, no method throws and every load gives the default', () => {
   for (const storage of [null, undefined, {}, { getItem: denied, setItem: denied, removeItem: denied }]) {
     const p = createPersistence(storage);
