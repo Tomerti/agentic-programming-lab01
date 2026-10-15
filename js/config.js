@@ -18,7 +18,6 @@ const freezeRows = table => {
 export const WORLD = freezeRows({
   cityCenter: { x: 0, z: -11 },
   radarRadius: 16,
-  windowXRange: [-6, 6], // the outside x range the room's window shows, at the city's z
   launchPoint: { x: 3.8, y: 3.1, z: -7.0 }, // where interceptors start (the launcher's tube block)
   // Populated impact zones: circles of radius r around (x, z).
   neighborhoods: freezeRows([

@@ -49,7 +49,9 @@ export function sortedDetectedThreats(state) {
     .sort((a, b) => timeToImpact(a) - timeToImpact(b));
 }
 
-// Removes, in place, the items of `list` that `alive` rejects, so views holding the array keep a live one.
+// Removes, in place, the items of `list` that `alive` rejects: no new array every frame. Views must still read
+// state.threats and state.interceptors afresh each frame, never keep them, since every round, retry and new game
+// starts with new arrays.
 const keep = (list, alive) => {
   let n = 0;
   for (const item of list) if (alive(item)) list[n++] = item;

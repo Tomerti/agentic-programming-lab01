@@ -41,7 +41,7 @@ export function createEffects({ THREE, scene, outsideGroup, settings = {}, props
   const sphere = new THREE.SphereGeometry(1, 16, 12);
   // Each explosion fades on its own, so each has its own material. Not tone mapped: that turns the pale ones grey.
   const sphereMaterial = () => new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false, toneMapped: false });
-  const lights =Array.from({ length: EXPLOSION.lights }, () => {
+  const lights = Array.from({ length: EXPLOSION.lights }, () => {
     const light = new THREE.PointLight(0xffffff, 0, EXPLOSION.range, 2);
     outsideGroup.add(light);
     return light;

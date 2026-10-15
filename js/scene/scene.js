@@ -12,7 +12,9 @@ const LOOK_EASE = 4; // per second: each frame closes 1 − e^(−4·dt) of the 
 // narrower screens get a taller view so the whole window stays in frame.
 const FOV_STOPS = [[1.0, 70], [1.33, 62], [1.6, 55]];
 const MAX_PIXEL_RATIO = 1.5;
-const OUTSIDE_Y = -0.6; // the room stands on a hill above the city
+// The room stands on a hill above the city: the outside group's y position, below the room's floor. A point at world
+// height y is at height y − OUTSIDE_Y in the outside group's coordinates.
+export const OUTSIDE_Y = -0.6;
 // The day/night colours carry the hemisphere light's brightness, so its intensity stays fixed. With those
 // colours read as sRGB, 4 lights the night city about as brightly as the approved mockup's night.
 const HEMI_INTENSITY = 4;

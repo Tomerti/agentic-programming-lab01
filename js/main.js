@@ -17,15 +17,15 @@ import { createEffects } from './scene/effects.js';
 import { createMonitorPainter, radarBlipAt, threatRowAt } from './scene/monitors.js';
 import { buildOutside } from './scene/outside.js';
 import { createProjectiles } from './scene/projectiles.js';
-import { buildRoom } from './scene/room.js';
-import { createScene } from './scene/scene.js';
+import { buildRoom, WINDOW_CENTRE_WORLD } from './scene/room.js';
+import { createScene, OUTSIDE_Y } from './scene/scene.js';
 import { createHud } from './ui/hud.js';
 import { createScreens } from './ui/screens.js';
 import { createShop } from './ui/shop.js';
 
 const MAX_DT = 0.1; // seconds: a hidden tab or a long frame must not jump the clock
-// The window's centre, world (0, 1.9, −2.6), in the outside group's coordinates, which the session's positions use.
-const WINDOW_CENTRE = { x: 0, y: 2.5, z: -2.6 };
+// The window's centre in the outside group's coordinates, which the session's positions use.
+const WINDOW_CENTRE = Object.freeze({ ...WINDOW_CENTRE_WORLD, y: WINDOW_CENTRE_WORLD.y - OUTSIDE_Y });
 // effects.shake() strengths (spec §8): an impact on a neighborhood, one on open ground, and an interception
 // closer than WORLD.shakeNearDistance to the window.
 const SHAKES = { populated: 1.0, open: 0.35, nearIntercept: 0.15 };

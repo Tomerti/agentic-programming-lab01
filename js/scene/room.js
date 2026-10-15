@@ -15,6 +15,9 @@ const TAU = Math.PI * 2;
 const SKY_INDOORS = 0.5;
 const ROOM = { halfWidth: 3.5, back: 3.9, height: 3.05, wall: 0.2 }; // the walls are centred on these lines
 const WINDOW = { z: -2.6, halfWidth: 2.3, bottom: 1.2, top: 2.6, mullions: [-0.77, 0.77] };
+// The centre of the window's opening, in world coordinates: where the room hears the explosions outside and feels
+// the interceptions close to it (main.js).
+export const WINDOW_CENTRE_WORLD = Object.freeze({ x: 0, y: (WINDOW.bottom + WINDOW.top) / 2, z: WINDOW.z });
 const FRAME = { width: 0.06, depth: 0.26, mullion: 0.04 };
 // The desk top surface. The desk group's origin is on it at x 0, z 0, so a control placed at (x, 0, z) in
 // the group stands on the top.

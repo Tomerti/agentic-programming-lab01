@@ -1,5 +1,6 @@
-# Python is assumed for now. Add entries for other languages (build output,
-# dependency folders, caches) as the course's tooling becomes known.
+# The game is plain JavaScript with no build step and no npm dependencies, so there is
+# no build output or dependency folder to ignore. Node.js runs the tools and Python's
+# http.server serves the page locally. Add entries here if the tooling grows.
 
 # Secrets and local configuration
 .env
