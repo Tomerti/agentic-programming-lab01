@@ -29,10 +29,14 @@ const SANDSTONE = [0xe0bd88, 0xd4ad7a, 0xeed2a4, 0xc49a6a];
 const CITY_SEED = 7; // the mockup's seed: the same city as the approved mockup
 const STAR_SEED = 11;
 const LANDMARK = { x: -1.5, z: -11 };
-const LAUNCHER = { x: 3.8, z: -7.2, yaw: -0.4 };
+// The launcher is placed from WORLD.launchPoint, the centre of its tube block's muzzle face, where the interceptors
+// appear: the muzzle stands MUZZLE.height above the launcher's base and MUZZLE.ahead in front of its centre (towards
+// the room), so the launcher and the launch point cannot drift apart.
+const MUZZLE = { height: 1.6, ahead: 0.2 };
+const LAUNCHER = { x: WORLD.launchPoint.x, z: WORLD.launchPoint.z - MUZZLE.ahead, yaw: -0.4 };
 // The launcher stands on an earth berm, a truncated cone with a flat top, so that it shows above the
 // window sill: seen from the seat, the sill hides everything below y ≈ 1.55 at the launcher's distance.
-const BERM = { topRadius: 1.4, radius: 2.2, height: 1.5, color: 0x7d9455 };
+const BERM = { topRadius: 1.4, radius: 2.2, height: WORLD.launchPoint.y - MUZZLE.height, color: 0x7d9455 };
 const TUBE_LENGTH = 1.2;
 const TUBE_TILT = 0.8; // radians from vertical, leaning towards the city
 
@@ -257,13 +261,28 @@ export function buildOutside(group, { THREE, RoundedBoxGeometry }) {
   buildLandmark(kit);
   const launcher = buildLauncher(kit);
 
-  let paintedSky = null; // [...skyTop, ...skyHorizon] as last painted
+  // The sky's colours as last painted, kept channel by channel so that the check below allocates nothing.
+  const paintedTop = [0, 0, 0];
+  const paintedHorizon = [0, 0, 0];
+  let skyPainted = false;
+
+  // Whether a channel of the sky's colours has moved more than SKY_REDRAW_STEP since the last paint.
+  function skyMoved(top, horizon) {
+    for (let i = 0; i < 3; i++) {
+      if (Math.abs(top[i] - paintedTop[i]) > SKY_REDRAW_STEP) return true;
+      if (Math.abs(horizon[i] - paintedHorizon[i]) > SKY_REDRAW_STEP) return true;
+    }
+    return false;
+  }
 
   function applyLighting(params, { scene, lights }) {
     const { sunAltitude: alt, sunAzimuth: az } = params;
-    const skyColors = [...params.skyTop, ...params.skyHorizon];
-    if (!paintedSky || skyColors.some((v, i) => Math.abs(v - paintedSky[i]) > SKY_REDRAW_STEP)) {
-      paintedSky = skyColors;
+    if (!skyPainted || skyMoved(params.skyTop, params.skyHorizon)) {
+      skyPainted = true;
+      for (let i = 0; i < 3; i++) {
+        paintedTop[i] = params.skyTop[i];
+        paintedHorizon[i] = params.skyHorizon[i];
+      }
       sky.paint(params.skyTop, params.skyHorizon);
       if (scene.background?.isColor) setColor(scene.background, params.skyTop);
     }

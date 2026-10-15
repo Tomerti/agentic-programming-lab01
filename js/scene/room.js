@@ -35,8 +35,19 @@ const MONITORS = {
 };
 // The lamps are mostly metallic: a matte red dome under the ceiling light would look lit even when it is off.
 const LIFE_LAMPS = { count: 8, from: 0.36, to: 0.78, z: 0.02, radius: 0.018, lit: 1.4, unlit: 0.08, metalness: 0.85 };
-const SIGN = { text: 'IRON DOME · JERUSALEM BATTERY', width: 1.5, height: 0.28, y: 2.83, canvas: [1024, 192] };
-const SIGN_FONT = '700 84px "Chakra Petch", Inter, system-ui, sans-serif';
+// The wall sign hangs on the front wall left of the window, the beacon's mirror image: on the band above the window
+// the HUD's bar and mission tab would cover it. Its board (the face plus a 0.03 rim) fits between the left wall and
+// the window frame and shows whole from the seat on screens of 4:3 and wider. The name is set in two lines, as on
+// the title screen, large enough to read from the seat: each line's text, its size in canvas pixels, its colour,
+// and its baseline as a share of the canvas's height. The face has the canvas's proportions.
+const SIGN = {
+  width: 0.66, height: 0.309, x: -2.75, y: 2.33, canvas: [1024, 480], border: { inset: 16, width: 7 },
+  lines: [
+    { text: 'IRON DOME', size: 160, color: '#eef2f7', baseline: 0.48 },
+    { text: 'JERUSALEM BATTERY', size: 86, color: '#ffd166', baseline: 0.77 },
+  ],
+};
+const signFont = size => `700 ${size}px "Chakra Petch", Inter, system-ui, sans-serif`;
 // The siren beacon hangs on the front wall to the right of the window, where the seat sees it. On the right
 // wall it would stand about 59° to the side, out of view even with the mouse-look turned fully right.
 const BEACON = { x: 2.62, y: 2.35, z: WINDOW.z + ROOM.wall / 2 + 0.03 };
@@ -109,37 +120,41 @@ function buildShell({ THREE, standard, mat, rbox, mesh }) {
   mesh(new THREE.BoxGeometry(halfWidth * 2, 0.12, 0.02), mat(COLORS.stripe), 0, 0.1, back - thickness / 2 - 0.01);
 }
 
-// A canvas texture with the sign's text, repainted once its web font has loaded.
+// A canvas texture with the sign's lettering in a gold frame, repainted once its web font has loaded.
 function signTexture(THREE) {
   const canvas = document.createElement('canvas');
   [canvas.width, canvas.height] = SIGN.canvas;
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
-  texture.anisotropy = 8;
+  texture.anisotropy = 8; // the sign is seen at a slant
   const paint = () => {
     const ctx = canvas.getContext('2d');
     const { width, height } = canvas;
+    const { inset, width: line } = SIGN.border;
     ctx.fillStyle = '#15202b';
     ctx.fillRect(0, 0, width, height);
     ctx.strokeStyle = '#ffd166';
-    ctx.lineWidth = 6;
-    ctx.strokeRect(14, 14, width - 28, height - 28);
-    ctx.fillStyle = '#ffd166';
-    ctx.font = SIGN_FONT;
+    ctx.lineWidth = line;
+    ctx.strokeRect(inset, inset, width - 2 * inset, height - 2 * inset);
     ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(SIGN.text, width / 2, height / 2 + 4, width - 90);
+    ctx.textBaseline = 'alphabetic';
+    for (const { text, size, color, baseline } of SIGN.lines) {
+      ctx.fillStyle = color;
+      ctx.font = signFont(size);
+      ctx.fillText(text, width / 2, height * baseline, width - 6 * inset); // squeezed, never cut, in a fallback font
+    }
     texture.needsUpdate = true;
   };
   paint();
-  document.fonts?.load(SIGN_FONT).then(paint, () => {}); // until then the fallback font shows
+  // Until the web font has loaded the fallback font shows.
+  if (document.fonts) Promise.all(SIGN.lines.map(({ size }) => document.fonts.load(signFont(size)))).then(paint, () => {});
   return texture;
 }
 
-// The sign above the window: a dark board with the lettering on its face.
+// The sign beside the window: a dark board with the lettering on its face.
 function buildSign({ THREE, standard, mat, rbox, mesh, group }) {
   const sign = new THREE.Group();
-  sign.position.set(0, SIGN.y, WINDOW.z + ROOM.wall / 2);
+  sign.position.set(SIGN.x, SIGN.y, WINDOW.z + ROOM.wall / 2);
   group.add(sign);
   mesh(rbox(SIGN.width + 0.06, SIGN.height + 0.06, 0.03, 0.01), mat(COLORS.dark), 0, 0, 0.015, sign);
   const map = signTexture(THREE);

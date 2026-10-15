@@ -668,12 +668,13 @@ html, body {
   gap: 10px;
 }
 
-/* The title: the name over the left of the room, the menu under it. */
+/* The title: the name over the left of the room, the menu under it. The left edge is nearly opaque: the wall sign
+   (room.js) hangs there, behind the name, and must not compete with it. */
 .screen-title {
   justify-content: flex-start;
   padding: clamp(24px, 6vh, 64px) clamp(24px, 6.5vw, 104px);
   background:
-    linear-gradient(90deg, rgb(var(--shade) / .94), rgb(var(--shade) / .8) 28%, rgb(var(--shade) / .3) 54%,
+    linear-gradient(90deg, rgb(var(--shade) / .98), rgb(var(--shade) / .84) 28%, rgb(var(--shade) / .3) 54%,
       rgb(var(--shade) / .06) 76%, transparent),
     linear-gradient(0deg, rgb(var(--shade) / .55), transparent 38%);
 }
