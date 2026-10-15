@@ -332,7 +332,7 @@ open, hollow = decoy, cyan = interceptor with a line to its target, selected bli
 jamming static), **THREATS + MISSION** (right; rows with id, type, zone, time-to-impact;
 lower area, missions on the left and the last up to 6 log lines on the right). A lamp strip on the
 console shows lives: one lamp per `maxLives`, lit per life; a lost life flashes red. The
-siren beacon on the wall spins on alerts and populated impacts. The sign reads
+siren beacon on the front wall spins on alerts and populated impacts. A sign on the wall band left of the window reads
 "IRON DOME · JERUSALEM BATTERY".
 
 ### Window and outside
