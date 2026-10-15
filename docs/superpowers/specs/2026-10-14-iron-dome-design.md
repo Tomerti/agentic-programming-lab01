@@ -380,10 +380,11 @@ noise, quiet). Explosion loudness scales with distance from the window.
 
 Title (Start shift / Continue from round N / Endless, locked until a campaign victory /
 How to play / Settings), How to play (controls, the open-area rule, resources), Pause
-(`Esc`), Settings (volume, mute, reduce motion, shadows on/off, reset save), Round
-summary (stats, coins earned, lives replenished, missions), Game over (stats, Retry round
-N / Restart campaign), Victory (rating S/A/B/C from lives left, populated impacts and
-wasted shots; unlocks Endless). All overlays are DOM, styled to match the room palette.
+(`Esc`, or the tab hidden), Settings (volume, mute, reduce motion, shadows on/off, reset
+save), Round summary (stats, coins earned, lives replenished, missions), Game over (stats,
+Retry round N / Restart campaign), Victory (rating S/A/B/C from lives left, populated
+impacts and wasted shots; unlocks Endless). All overlays are DOM, styled to match the room
+palette.
 
 ## 9. Persistence (`js/game/state.js`)
 

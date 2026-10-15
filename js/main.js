@@ -44,7 +44,7 @@ const persistence = createPersistence(localStorageOrNull());
 const settings = persistence.loadSettings();
 const scene = createScene({ container: document.getElementById('viewport'), settings });
 const outside = buildOutside(scene.outsideGroup, { THREE, RoundedBoxGeometry });
-const room = buildRoom(scene.roomGroup, { THREE, RoundedBoxGeometry });
+const room = buildRoom(scene.roomGroup, { THREE, RoundedBoxGeometry, settings });
 const projectiles = createProjectiles({ THREE, outsideGroup: scene.outsideGroup });
 const effects = createEffects({ THREE, scene, outsideGroup: scene.outsideGroup, settings, props: room.props });
 const bus = createBus();
@@ -330,6 +330,12 @@ function guardScreenKeys(event) {
 }
 window.addEventListener('keydown', guardScreenKeys, true);
 window.addEventListener('keyup', guardScreenKeys, true);
+
+// Hiding the tab (another tab, a minimised window) pauses a round being played, as Esc does, unless a screen is up:
+// the player comes back to the pause screen, not to a wave that goes on the moment the tab shows again.
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden && screens.current === null && session.pause()) screens.show('pause');
+});
 
 screens.show('title');
 

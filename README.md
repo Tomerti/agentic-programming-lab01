@@ -40,7 +40,8 @@ then open http://localhost:8000 (`npm run serve` runs the same command).
 | Pause / resume | Resume button (pause screen) | Esc |
 
 The toggles, the lever, the system buttons, the mug and the clipboard move and make sounds but do nothing else.
-Keys act only while no screen is shown; on the pause screen Esc resumes.
+Keys act only while no screen is shown; on the pause screen Esc resumes. Switching to another tab pauses the round
+too.
 
 ## How it plays
 
@@ -116,15 +117,16 @@ the implementation plan are in `docs/superpowers`.
 - [ ] **Engage:** select a red track (click its blip, or Tab) and press ENGAGE or Space: the button dips and clicks,
   an interceptor leaves the launcher, coins −80 and interceptors −1; a hit bursts white in the sky.
 - [ ] **Alert:** with a red track selected, ALERT or A: the siren sounds, the beacon spins, +40 coins and a toast.
-- [ ] **Impact shake:** let a red track land: the view shakes, the screen's edges flash red, a life lamp and a
-  shield go out. A grey track's impact shakes less and costs nothing.
+- [ ] **Impact shake:** let a red track land: the view shakes, the screen's edges flash red, a life lamp flashes
+  and goes out, and a shield goes out. A grey track's impact shakes less and costs nothing.
 - [ ] **Summary:** after the last wave, the round summary lists the stats, the coins earned, the life back and
   the missions.
 - [ ] **Shop:** Requisition supplies opens the shop; Restock all fills the launcher; buying an upgrade raises its
   level and lowers the balance, and a maxed item says so.
 - [ ] **Round 2:** Start round 2 moves the clock six hours on, to 16:00, and evening falls during the round; grey
   tracks appear and are worth letting fall.
-- [ ] **Pause:** Esc pauses the round under a dimmed screen; Esc or Resume continues it.
+- [ ] **Pause:** Esc pauses the round under a dimmed screen; Esc or Resume continues it. Switching to another tab
+  and back shows the pause screen too.
 - [ ] **Settings:** volume and mute act at once, Reduce motion stops the shake and the flash, Shadows off removes
   the shadows, and all of them survive a reload; M mutes during play with a toast.
 - [ ] **Game over:** lose every life: "The city has fallen" with the totals. Holding Space as it opens does not

@@ -35,6 +35,10 @@ const MONITORS = {
 };
 // The lamps are mostly metallic: a matte red dome under the ceiling light would look lit even when it is off.
 const LIFE_LAMPS = { count: 8, from: 0.36, to: 0.78, z: 0.02, radius: 0.018, lit: 1.4, unlit: 0.08, metalness: 0.85 };
+// A lamp whose life is lost flashes red (spec §8): for `time` seconds it is unlit and lit by turns, `blink` seconds
+// each, starting unlit, then it stays unlit. It blinks at the lit level: a brighter glow would not look redder, as
+// the tone mapping turns it orange, then pale.
+const LAMP_FLASH = { time: 0.6, blink: 0.1 };
 // The wall sign hangs on the front wall left of the window, the beacon's mirror image: on the band above the window
 // the HUD's bar and mission tab would cover it. Its board (the face plus a 0.03 rim) fits between the left wall and
 // the window frame and shows whole from the seat on screens of 4:3 and wider. The name is set in two lines, as on
@@ -352,21 +356,23 @@ function buildChairAndPlant({ THREE, group, mat, rbox, mesh }) {
   }
 }
 
-// buildRoom(roomGroup, { THREE, RoundedBoxGeometry }) builds the room into roomGroup and returns:
+// buildRoom(roomGroup, { THREE, RoundedBoxGeometry, settings }) builds the room into roomGroup and returns the
+// parts below. `settings` is the saved settings, whose reduceMotion is read at every setLives().
 //   desk        the console group; its origin is on the desk top at x 0, z 0 (world y 0.88)
 //   monitors    { resources, radar, threats }, each { group, screen, canvas, ctx, texture, width, height }; the
 //               screen mesh carries userData.monitor = its name
 //   beacon      { group, dome, light, pivot, spin(seconds), update(dt) }: the siren; spin() lights it and turns
 //               the pivot, which sweeps the light, for that long (update() runs it, every frame)
 //   lifeLamps   the eight lamp meshes, left to right; setLives(lives, maxLives) lights `lives` of them, dims
-//               the rest up to maxLives and hides the others
+//               the rest up to maxLives and hides the others; a lamp whose life was lost since the last call
+//               flashes red for LAMP_FLASH.time as it goes out
 //   sign, riser the wall sign group and the riser mesh
 //   props       the loose objects on the desk, for the impact jitter; props.mugGroup is the mug and
 //               props.clipboard the clipboard
 //   material(params)  a MeshStandardMaterial with the room's occlusion of the sky light, for anything else
 //               built into the room (the controls), so that it is lit like the rest
-//   update(dt)  blinks the rack lights
-export function buildRoom(group, { THREE, RoundedBoxGeometry }) {
+//   update(dt)  blinks the rack lights and runs the lamps' flashes
+export function buildRoom(group, { THREE, RoundedBoxGeometry, settings = {} }) {
   const kit = makeKit(group, THREE, RoundedBoxGeometry);
   buildShell(kit);
   const sign = buildSign(kit);
@@ -379,11 +385,18 @@ export function buildRoom(group, { THREE, RoundedBoxGeometry }) {
   const props = buildProps(kit, desk);
   buildChairAndPlant(kit);
 
+  // A lamp that goes out because its life was lost flashes as it does; update() runs the flash. With
+  // settings.reduceMotion on it just goes out, as the screen's red flash does not show then either.
+  let livesShown = null; // the lives the lamps show; null before the first setLives()
+  const flashLeft = lifeLamps.map(() => 0); // seconds each lamp's flash still runs
   function setLives(lives, maxLives) {
     lifeLamps.forEach((lamp, i) => {
       lamp.visible = i < maxLives;
+      if (i < lives) flashLeft[i] = 0;
+      else if (livesShown !== null && i < livesShown && !settings.reduceMotion) flashLeft[i] = LAMP_FLASH.time;
       lamp.material.emissiveIntensity = i < lives ? LIFE_LAMPS.lit : LIFE_LAMPS.unlit;
     });
+    livesShown = lives;
   }
 
   let time = 0;
@@ -391,6 +404,12 @@ export function buildRoom(group, { THREE, RoundedBoxGeometry }) {
     time += dt;
     rackLights.forEach((light, i) => {
       light.material.emissiveIntensity = 0.8 + Math.sin(time * (2 + i * 0.37) + i) * 0.7;
+    });
+    lifeLamps.forEach((lamp, i) => {
+      if (flashLeft[i] <= 0) return;
+      flashLeft[i] -= dt;
+      const lit = flashLeft[i] > 0 && Math.floor((LAMP_FLASH.time - flashLeft[i]) / LAMP_FLASH.blink) % 2 === 1;
+      lamp.material.emissiveIntensity = lit ? LIFE_LAMPS.lit : LIFE_LAMPS.unlit;
     });
   }
 
