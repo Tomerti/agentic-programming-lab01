@@ -390,7 +390,11 @@ i.e. after the shop, so purchases are kept; "Continue" and "Retry round N" both 
 the state at the start of that round, so a retry keeps upgrades and the lives you had),
 `irondome.v1.settings` (volume, muted, reduceMotion, shadows), `irondome.v1.records`
 (campaign victory + best rating, best endless round and score). `storage` is injected so
-tests use an in-memory object; a missing/corrupt entry falls back to defaults.
+tests use an in-memory object; a missing/corrupt entry falls back to defaults. "Retry
+round N" for N > 1 restores that state into the shop before round N, so a player whose
+loadout could not hold the round can requisition supplies first, and leaving the shop
+starts round N (saving a new checkpoint); "Continue" and a retry of round 1 go straight
+into the round.
 
 ## 10. Testing
 

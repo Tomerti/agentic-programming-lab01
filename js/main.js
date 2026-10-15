@@ -117,8 +117,9 @@ const controls = createControls({
 
 bus.on('hold:changed', ({ on }) => controls.setLamp('hold', on));
 bus.on('hazard:jamming', ({ on }) => controls.setLamp('resetRadar', on));
+// The lamps show the lives, and a retry's shop shows those of its checkpoint behind it.
 const showLives = () => room.setLives(state.lives, state.maxLives);
-for (const type of ['round:start', 'life:lost', 'life:gained', 'shop:purchased']) bus.on(type, showLives);
+for (const type of ['round:start', 'shop:open', 'life:lost', 'life:gained', 'shop:purchased']) bus.on(type, showLives);
 
 const nearWindow = ({ x, y, z }) => (
   Math.hypot(x - WINDOW_CENTRE.x, y - WINDOW_CENTRE.y, z - WINDOW_CENTRE.z) < WORLD.shakeNearDistance

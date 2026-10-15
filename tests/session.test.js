@@ -742,7 +742,7 @@ test('a new round or game switches HOLD FIRE and jamming off and says so, withou
 test('retryRound restores the round-start checkpoint; an Endless or missing checkpoint starts a fresh campaign', () => {
   const { session, state, persistence } = setup();
   session.retryRound();
-  assert.deepEqual([state.round, state.coins], [1, 1000], 'no checkpoint yet');
+  assert.deepEqual([state.round, state.phase, state.coins], [1, 'wave', 1000], 'no checkpoint yet');
   playOut(session);
   session.continueFromSummary();
   session.buy('radar');
@@ -750,10 +750,63 @@ test('retryRound restores the round-start checkpoint; an Endless or missing chec
   const cp = persistence.loadCheckpoint();
   Object.assign(state, { coins: 3, lives: 1, ammo: 0, upgrades: {} });
   session.retryRound();
-  assert.deepEqual([state.round, state.wave, state.phase, state.coins, state.lives, state.ammo, state.upgrades], [2, 1, 'wave', cp.coins, cp.lives, cp.ammo, { radar: 1 }]);
-  persistence.saveCheckpoint({ ...state, mode: 'endless', round: 14 });
+  assert.deepEqual([state.round, state.phase, state.coins, state.lives, state.ammo, state.upgrades], [1, 'shop', cp.coins, cp.lives, cp.ammo, { radar: 1 }], 'the shop before round 2');
+  session.leaveShop();
+  assert.deepEqual([state.round, state.wave, state.phase], [2, 1, 'wave']);
+  for (const start of [() => session.startCampaign({ fromCheckpoint: true }), () => session.retryRound()]) {
+    persistence.saveCheckpoint({ ...state, mode: 'endless', round: 14 });
+    start();
+    assert.deepEqual([state.mode, state.round, state.phase, state.coins, state.upgrades], ['campaign', 1, 'wave', 1000, {}]);
+  }
+});
+
+// Ends the game in the round being played: the last life goes to an impact on Gilo.
+const loseLastLife = session => {
+  session.state.lives = 1;
+  session.state.threats.push(craft({ id: 1, zone: 'gilo', left: DT / 2 }));
+  session.update(DT);
+  assert.equal(session.state.phase, 'gameover');
+};
+
+test('a retry after a game over opens the shop before the round with the checkpoint, and leaving it plays the round', () => {
+  const { session, state, events, persistence } = setup();
+  session.startCampaign();
+  Object.assign(state, { coins: 2000, ammo: 12, lives: 4, upgrades: { radar: 1 } });
+  state.stats.total.intercepted = 15;
+  session.startRound(3); // saves the checkpoint of round 3
+  const cp = persistence.loadCheckpoint();
+  assert.deepEqual([cp.round, cp.coins, cp.ammo, cp.lives, cp.upgrades], [3, 2000, 12, 4, { radar: 1 }]);
+  Object.assign(state, { coins: 100, ammo: 0 }); // the round goes badly ...
+  loseLastLife(session); // ... and ends it
+  const from = events.length;
+  session.retryRound();
+  assert.deepEqual(events.slice(from), [['shop:open', { round: 2 }]]);
+  assert.deepEqual([state.mode, state.phase, state.round], ['campaign', 'shop', 2], 'the shop after round 2, before round 3');
+  assert.deepEqual([state.coins, state.ammo, state.ammoCapacity, state.lives, state.maxLives, state.upgrades], [cp.coins, cp.ammo, cp.ammoCapacity, cp.lives, cp.maxLives, cp.upgrades]);
+  assert.deepEqual([state.threats, state.interceptors, state.stats.round], [[], [], emptyStats()]);
+  assert.deepEqual(state.stats.total, { ...emptyStats(), intercepted: 15 }, 'the totals as round 3 began');
+  assert.deepEqual(session.buy('capacity'), { ok: true, level: 1 });
+  assert.deepEqual([state.coins, state.ammoCapacity], [cp.coins - 400, cp.ammoCapacity + 10]);
+  assert.equal(session.leaveShop(), true);
+  assert.deepEqual([state.round, state.wave, state.phase], [3, 1, 'wave']);
+  assert.deepEqual(payloads(events.slice(from), 'round:start').map(p => p.round), [3]);
+  const again = persistence.loadCheckpoint();
+  assert.deepEqual([again.round, again.coins, again.upgrades], [3, cp.coins - 400, { radar: 1, capacity: 1 }], 'the new checkpoint keeps the purchase');
+});
+
+test('a retry of round 1 starts it at once; Continue goes straight into the round of the checkpoint', () => {
+  const { session, state, events, persistence } = setup();
+  session.startCampaign();
+  loseLastLife(session);
+  const from = events.length;
+  session.retryRound();
+  assert.deepEqual(typesOf(events.slice(from)), ['round:start', 'wave:start'], 'no shop before round 1');
+  assert.deepEqual([state.round, state.wave, state.phase, state.lives, state.coins], [1, 1, 'wave', 5, 1000]);
+  session.startRound(3);
+  const cp = persistence.loadCheckpoint();
+  loseLastLife(session);
   session.startCampaign({ fromCheckpoint: true });
-  assert.deepEqual([state.mode, state.round, state.coins, state.upgrades], ['campaign', 1, 1000, {}]);
+  assert.deepEqual([state.round, state.wave, state.phase, state.coins, state.lives], [3, 1, 'wave', cp.coins, cp.lives]);
 });
 
 test('Endless scores time survived, keeps no checkpoint, and game over records the best round and score', () => {

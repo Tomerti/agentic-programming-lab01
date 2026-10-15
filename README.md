@@ -59,13 +59,14 @@ ends with a stipend of 300 + 50 × the round number. The score adds up the rewar
 
 **Lives.** You start with 5. Red tracks are headed for a neighborhood, and each one that lands costs a life.
 Grey tracks land on open ground and cost nothing: let them fall, since a shot at one is wasted. Each round you
-finish gives a life back, up to the maximum. Lose them all and the city falls: retry the round with the coins,
-interceptors, lives and upgrades you had when it began, or restart the campaign. The game saves at the start of
-every round, so Continue on the title picks up where you left off.
+finish gives a life back, up to the maximum. Lose them all and the city falls: retry the round, which takes you
+back to the shop before it with the coins, interceptors, lives and upgrades you had when it began, so you can
+requisition supplies first, or restart the campaign. The game saves at the start of every round, so Continue on
+the title picks up where you left off.
 
 ## Shop
 
-Between rounds, after the summary:
+Between rounds, after the summary, and before a round you retry:
 
 | Item | Price | Levels | Effect |
 |---|---|---|---|
@@ -128,8 +129,9 @@ the implementation plan are in `docs/superpowers`.
   the shadows, and all of them survive a reload; M mutes during play with a toast.
 - [ ] **Game over:** lose every life: "The city has fallen" with the totals. Holding Space as it opens does not
   press Retry.
-- [ ] **Retry:** Retry round N starts the round again with what you had when it began; after a reload, Continue
-  from round N does the same.
+- [ ] **Retry:** Retry round N opens the shop (SUPPLY REQUISITION · BEFORE ROUND N) with what you had when the
+  round began, and Start round N plays it again; a retry of round 1 starts it at once. After a reload, Continue
+  from round N goes straight into the round.
 - [ ] **Victory:** finish round 10 (`__game.session.startRound(10)` gets there sooner): the rating and the totals;
   Endless is unlocked on the title.
 - [ ] **Endless:** Play Endless: round 11 and on, harder each time; after it ends, the best Endless round and

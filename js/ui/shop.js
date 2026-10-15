@@ -1,9 +1,10 @@
-// The shop between rounds (spec §7): a glass panel (.shop) over the dimmed room, shown as the screen 'shop' in the
-// overlay container that the screens use (screens.js). It shows the balance (#shop-balance), the restock row
-// (#btn-restock), a card for each upgrade with its level, its price and a Buy button ([data-buy="<id>"]), disabled
-// with the reason when the economy says it cannot be bought, and #btn-next-round, which starts the next round.
-// Every rule is the economy's (prices, levels, what can be bought) and every purchase is a session command. The
-// panel is drawn again after each purchase, and render() draws it again when something else changed the coins.
+// The shop between rounds (spec §7), and before a retried round (spec §9): a glass panel (.shop) over the dimmed
+// room, shown as the screen 'shop' in the overlay container that the screens use (screens.js). It shows the
+// balance (#shop-balance), the restock row (#btn-restock), a card for each upgrade with its level, its price and a
+// Buy button ([data-buy="<id>"]), disabled with the reason when the economy says it cannot be bought, and
+// #btn-next-round, which starts the next round. Every rule is the economy's (prices, levels, what can be bought)
+// and every purchase is a session command. The panel is drawn again after each purchase, and render() draws it
+// again when something else changed the coins.
 import { SHOP } from '../config.js';
 import { amount, button, coin, focusIn, h, screenElement } from './screens.js';
 
@@ -30,11 +31,13 @@ export function createShop({ root, session, economy = session.economy }) {
     if (result.ok) panel.querySelector(`[data-item="${id}"]`)?.classList.add('bought');
   }
 
+  // The title names the round that comes next: the shop opens after a round's summary, and before a round that a
+  // retry plays again (state.round is then the round before it).
   function header() {
     return h('header', { class: 'panel-head shop-head' },
       h('div', { class: 'panel-heading' },
         h('h1', { class: 'panel-title' }, 'Supply requisition',
-          h('span', { class: 'title-round' }, ` · Round ${state.round} complete`))),
+          h('span', { class: 'title-round' }, ` · Before round ${state.round + 1}`))),
       h('div', { class: 'balance' },
         h('span', { class: 'balance-label' }, 'Balance'),
         h('span', { id: 'shop-balance' }, coin(), String(state.coins))));

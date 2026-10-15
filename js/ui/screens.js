@@ -382,9 +382,11 @@ export function createScreens({
     if (endless) {
       const records = persistence.loadRecords();
       text = `Best endless: round ${records.bestEndlessRound} · score ${records.bestEndlessScore}`;
+    } else if (retryRound === 1) {
+      text = 'Retry starts round 1 again with the coins, interceptors and lives you began with.';
     } else if (retryRound !== null) {
-      text = `Retry starts round ${retryRound} again with the coins, interceptors, lives and upgrades you had `
-        + 'when it began.';
+      text = `Retry takes you back to the shop before round ${retryRound}, with the coins, interceptors, lives and `
+        + 'upgrades you had when it began: requisition supplies, then try the round again.';
     }
     return panelScreen('gameover', 'The city has fallen', {
       tone: 'alarm',

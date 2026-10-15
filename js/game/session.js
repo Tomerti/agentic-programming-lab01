@@ -1,10 +1,10 @@
 // Session: the orchestrator of a game. It owns the one state record (state.js) and changes it in place: it plans
 // each round with the director, fires the spawns and the radar jamming of the schedule, flies threats and
 // interceptors, settles hits, misses and impacts through the economy, feeds the round's missions and moves through
-// the phases: title -> wave <-> breather -> summary -> shop -> the next round, until game over or victory. Views
-// read `session.state`, call the commands and listen to the events on the bus, nothing else. Pure logic: the
-// generator, the persistence and the bus are injected and time passes only through update(dt). The numbers are
-// the tables in config.js (spec §2, §4 to §7).
+// the phases: title -> wave <-> breather -> summary -> shop -> the next round, until game over or victory (a retry
+// goes from game over through the shop into the round again). Views read `session.state`, call the commands and
+// listen to the events on the bus, nothing else. Pure logic: the generator, the persistence and the bus are
+// injected and time passes only through update(dt). The numbers are the tables in config.js (spec §2, §4 to §7).
 import * as CONFIG from '../config.js';
 import { createInitialState, emptyStats, checkpointFrom, applyCheckpoint } from './state.js';
 import { createThreat, advanceThreat, isDetectable, timeToImpact } from './threats.js';
@@ -187,15 +187,34 @@ export function createSession({ config = CONFIG, rng, persistence, bus }) {
     cp?.mode === 'campaign' && Number.isInteger(cp.round) && cp.round >= 1 && cp.round <= ROUNDS.length
   );
 
-  // A new campaign, or with fromCheckpoint the round that the saved checkpoint began (a new campaign when there is
-  // no campaign checkpoint).
-  function startCampaign({ fromCheckpoint = false } = {}) {
+  // Resets the game for a campaign and, with fromCheckpoint and a campaign checkpoint saved, puts that checkpoint
+  // into the state. Returns the round to play: the one the checkpoint began, or 1 for a new campaign.
+  function resetCampaign(fromCheckpoint) {
     const cp = fromCheckpoint ? persistence.loadCheckpoint() : null;
     newGame('campaign');
-    if (resumable(cp)) {
-      applyCheckpoint(state, cp);
-      startRound(cp.round);
-    } else startRound(1);
+    if (!resumable(cp)) return 1;
+    applyCheckpoint(state, cp);
+    return cp.round;
+  }
+
+  // A new campaign, or with fromCheckpoint (Continue on the title) the round that the saved checkpoint began, at
+  // once (a new campaign when there is no campaign checkpoint).
+  function startCampaign({ fromCheckpoint = false } = {}) {
+    startRound(resetCampaign(fromCheckpoint));
+  }
+
+  // Retry after a game over (spec §9): the round that the saved checkpoint began, with the coins, interceptors, lives
+  // and upgrades of the checkpoint, but through the shop, so that a loadout that could not hold the round can change
+  // before the next try. The shop opens as the one after the round before, so leaveShop() starts the round. Round 1
+  // has no shop before it and starts at once; with no campaign checkpoint a new campaign starts.
+  function retryRound() {
+    const round = resetCampaign(true);
+    if (round === 1) {
+      startRound(1);
+      return;
+    }
+    Object.assign(state, { round: round - 1, phase: 'shop' });
+    emit('shop:open', { round: state.round });
   }
 
   // Endless, from the round after the campaign. After a campaign victory it starts with that victory's coins,
@@ -599,7 +618,7 @@ export function createSession({ config = CONFIG, rng, persistence, bus }) {
     economy,
     get missions() { return tracker; }, // the round's mission tracker; state.missions holds its status
     get schedule() { return schedule; }, // the round's plan from the director
-    startCampaign, retryRound: () => startCampaign({ fromCheckpoint: true }), startEndless, startRound, update,
+    startCampaign, retryRound, startEndless, startRound, update,
     selectTrack, cycleSelection, mostUrgent, revealsDecoys, engage, soundAlert, toggleHold, resetRadar, callHQ,
     continueFromSummary, leaveShop, pause, resume,
     buy: itemId => purchase(itemId, () => economy.buy(itemId)),
