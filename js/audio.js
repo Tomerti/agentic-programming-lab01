@@ -10,6 +10,7 @@
 // 0.06), so the compressor has little to do.
 //
 // SOUNDS and startHum work on any audio context, an OfflineAudioContext too, so a check can render them.
+import { TIMING } from './config.js';
 
 const SILENT = 0.0001; // where an exponential ramp ends: it cannot reach 0
 const LEAD = 0.01; // seconds: a sound starts this far ahead of the context's clock, so its first ramp is heard whole
@@ -31,8 +32,8 @@ const VOLUME_GLIDE = 0.015; // seconds: the time constant of a volume or mute ch
 const RESUME_WAIT = 1000; // ms: unlock() stops waiting for a context that does not start (no gesture) after this
 
 // The siren: the two pitches it switches between (Hz), each held `step` seconds, sliding over the last `slide` of it.
-// It sounds as long as the beacon spins (config TIMING.alertSiren).
-const SIREN = Object.freeze({ high: 800, low: 600, step: 0.5, slide: 0.04, length: 4, peak: 0.075 });
+// It sounds as long as the beacon spins.
+const SIREN = Object.freeze({ high: 800, low: 600, step: 0.5, slide: 0.04, length: TIMING.alertSiren, peak: 0.075 });
 // The phone: `rings` rings of `length` s, `gap` s apart, the clapper striking the two bells (their pitch in Hz and
 // their share of the peak) `strikes` times a second.
 const RING = Object.freeze({
@@ -652,9 +653,10 @@ export function createAudio(settings = { volume: 1, muted: false }, { onMutedCha
     stopHum = null;
   }
 
-  // The session's events and their sounds (spec §8). Explosions and misses are heard from `listener`: the farther,
-  // the fainter. Two jingles give way to the one that follows them in the same frame: no life-lost tone on the last
-  // life (game over follows), and no round-end one when the round ends the campaign (victory follows).
+  // The session's events and their sounds (spec §8). Explosions are heard from `listener`: the farther, the fainter.
+  // A miss buzzes at one level wherever it happens, since it tells the player something: far away, the fall-off
+  // would make it inaudible. Two jingles give way to the one that follows them in the same frame: no life-lost tone
+  // on the last life (game over follows), and no round-end one when the round ends the campaign (victory follows).
   function bind(bus, session, { listener = null } = {}) {
     const distanceTo = position => (listener && position
       ? Math.hypot(position.x - listener.x, position.y - listener.y, position.z - listener.z)
@@ -670,7 +672,7 @@ export function createAudio(settings = { volume: 1, muted: false }, { onMutedCha
         if (decoy) play('impactOpen', { gain: 0.3, distance });
         else play(populated ? 'impactPopulated' : 'impactOpen', { distance });
       },
-      'interceptor:missed': ({ position }) => play('buzz', { gain: 0.4, distance: distanceTo(position) }),
+      'interceptor:missed': () => play('buzz', { gain: 0.4 }),
       'threat:detected': () => play('ping'),
       'alert:sounded': () => play('siren'), // in time or not, the siren sounds (spec §6)
       'life:lost': ({ lives }) => {

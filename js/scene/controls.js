@@ -1,10 +1,10 @@
 // The console's physical controls and the picking under the pointer. On room.js's desk: the big buttons
 // ENGAGE, ALERT and HOLD FIRE (latching, with a lamp ring) and the square RESET RADAR with its jamming lens,
 // each with a label plate in front of it; the HQ phone, the radar range dial, the power lever, six system
-// buttons and four toggles; and room.js's mug. update() casts a ray from the camera through the pointer into
-// the controls and the three monitor screens: the control under it lights up, and over a control or a screen
-// the cursor becomes a pointer. click() presses that control (its cap dips, a switch flips) and reports its
-// action to onAction(action), or reports the canvas pixel of the screen under the pointer as
+// buttons and four toggles; and room.js's mug and clipboard. update() casts a ray from the camera through the
+// pointer into the controls and the three monitor screens: the control under it lights up, and over a control
+// or a screen the cursor becomes a pointer. click() presses that control (its cap dips, a switch flips) and
+// reports its action to onAction(action), or reports the canvas pixel of the screen under the pointer as
 // onAction('monitor', { monitor, px, py }). The controls change nothing in the game: main.js maps the
 // actions to the session's commands, and setLamp() shows the session's HOLD FIRE and jamming.
 //
@@ -18,6 +18,7 @@ const LATCH_DEPTH = 0.008; // a latched button (HOLD FIRE while it is on) rests 
 const HIGHLIGHT = { color: 0xffffff, intensity: 0.25 }; // the emissive of the control under the pointer
 const SWING_EASE = 14; // per second: a switch, the lever or the dial closes 1 − e^(−14·dt) of its turn
 const WOBBLE = { angle: 0.12, time: 0.45 }; // the clicked mug rocks this many radians, for this long
+const CLIPBOARD_LIFT = 0.012; // the clicked clipboard lifts this far off the desk and drops back
 
 // Where the controls stand (x, z) and how they look. Each control's name is the key of controlsByName; its
 // action, the name onAction() gets, is the same unless given.
@@ -263,12 +264,25 @@ function buildPhone(kit, desk) {
   };
 }
 
-// room.js's coffee mug, which rocks when clicked. Its materials are its own.
+// The materials of a prop's meshes, which no other object shares: they light up under the pointer.
+function ownMaterials(prop) {
+  const materials = new Set();
+  prop.traverse(object => { if (object.isMesh) materials.add(object.material); });
+  return [...materials];
+}
+
+// room.js's coffee mug, which rocks when clicked.
 function mugControl({ marker }, mug) {
-  const highlight = new Set();
-  mug.traverse(object => { if (object.isMesh) highlight.add(object.material); });
   return {
-    name: 'mug', group: mug, highlight: [...highlight], anchor: marker(mug, 0, 0.05, 0), wobble: mug, pressTime: WOBBLE.time,
+    name: 'mug', group: mug, highlight: ownMaterials(mug), anchor: marker(mug, 0, 0.05, 0), wobble: mug, pressTime: WOBBLE.time,
+  };
+}
+
+// room.js's clipboard, which lifts a little off the desk and drops back when clicked, like a cap that rises.
+function clipboardControl({ marker }, clipboard) {
+  return {
+    name: 'clipboard', group: clipboard, caps: [clipboard], travel: CLIPBOARD_LIFT, highlight: ownMaterials(clipboard),
+    anchor: marker(clipboard, 0, 0.01, 0),
   };
 }
 
@@ -315,6 +329,7 @@ export function createControls({ THREE, RoundedBoxGeometry, scene, camera, desk,
     buildDial(kit, desk),
     buildPhone(kit, desk),
     mugControl(kit, room.props.mugGroup),
+    clipboardControl(kit, room.props.clipboard),
   ].map(prepare);
   const controlsByName = Object.fromEntries(list.map(control => [control.name, control]));
   const targets = [...list.map(control => control.group), ...Object.values(monitors).map(monitor => monitor.screen)];

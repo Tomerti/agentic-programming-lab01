@@ -325,7 +325,8 @@ function buildProps({ THREE, mat, rbox, mesh }, desk) {
   mesh(rbox(0.08, 0.014, 0.03, 0.005), mat(COLORS.metal, { metalness: 0.4, roughness: 0.4 }), 0, 0.01, -0.13, clipboard);
 
   const props = [mug, lamp, clipboard];
-  props.mugGroup = mug; // controls.js makes the mug clickable
+  props.mugGroup = mug; // controls.js makes the mug and the clipboard clickable
+  props.clipboard = clipboard;
   return props;
 }
 
@@ -360,7 +361,8 @@ function buildChairAndPlant({ THREE, group, mat, rbox, mesh }) {
 //   lifeLamps   the eight lamp meshes, left to right; setLives(lives, maxLives) lights `lives` of them, dims
 //               the rest up to maxLives and hides the others
 //   sign, riser the wall sign group and the riser mesh
-//   props       the loose objects on the desk, for the impact jitter; props.mugGroup is the mug
+//   props       the loose objects on the desk, for the impact jitter; props.mugGroup is the mug and
+//               props.clipboard the clipboard
 //   material(params)  a MeshStandardMaterial with the room's occlusion of the sky light, for anything else
 //               built into the room (the controls), so that it is lit like the rest
 //   update(dt)  blinks the rack lights

@@ -80,13 +80,16 @@ function selectOnScreen({ monitor, px, py }) {
   if (id !== null && session.selectTrack(id)) audio.play('click', { gain: 0.5 });
 }
 
-// The sound of each console control as it is pressed: the big buttons click, the toggles, the lever, the dial and the
-// system buttons clack. The phone rings through the session's hq:line; the mug makes no sound.
+// The sound of each console control as it is pressed, as [sound, gain]: the big buttons click, the toggles, the lever,
+// the dial and the system buttons clack, and the mug and the clipboard knock softly. The phone rings through the
+// session's hq:line.
 const CONTROL_SOUNDS = Object.freeze({
-  engage: 'click', alert: 'click', hold: 'click', resetRadar: 'click',
-  toggle: 'clack', lever: 'clack', dial: 'clack', system: 'clack',
+  engage: ['click', 1], alert: ['click', 1], hold: ['click', 1], resetRadar: ['click', 1],
+  toggle: ['clack', 1], lever: ['clack', 1], dial: ['clack', 1], system: ['clack', 1],
+  mug: ['clack', 0.45], clipboard: ['clack', 0.45],
 });
-// What each console control does. The lever, the toggles, the system buttons and the mug do nothing in the game.
+// What each console control does. The lever, the toggles, the system buttons, the mug and the clipboard do nothing in
+// the game.
 const actions = {
   engage: () => session.engage(),
   alert: () => session.soundAlert(),
@@ -99,7 +102,10 @@ const actions = {
 const controls = createControls({
   THREE, RoundedBoxGeometry, scene, camera: scene.camera, desk: room.desk, monitors: room.monitors, room,
   onAction: (name, detail) => {
-    if (Object.hasOwn(CONTROL_SOUNDS, name)) audio.play(CONTROL_SOUNDS[name]);
+    if (Object.hasOwn(CONTROL_SOUNDS, name)) {
+      const [sound, gain] = CONTROL_SOUNDS[name];
+      audio.play(sound, { gain });
+    }
     actions[name]?.(detail);
   },
 });
