@@ -258,5 +258,7 @@ function frame(now) {
   room.beacon.update(dt);
   scene.update(dt);
   scene.render();
+  // The game is on screen: from now on index.html reports an uncaught error with a toast, not as a failure to start.
+  game.started = true;
 }
 requestAnimationFrame(frame);

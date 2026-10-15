@@ -6,11 +6,13 @@
 <title>Iron Dome · Jerusalem Battery</title>
 <script>
   // Test and debug hook. js/main.js extends it once the modules have loaded; it exists from the start so
-  // that a harness reading it early finds an object.
-  window.__game = { debugHour: null };
+  // that a harness reading it early finds an object. main.js sets `started` once the first frame is drawn.
+  window.__game = { debugHour: null, started: false };
 
-  // An uncaught error or rejected promise (no WebGL, the CDN out of reach, a bug) shows #fatal with the
-  // reason instead of leaving a blank or frozen page. The first failure stays on screen.
+  // An uncaught error or rejected promise before the game's first frame (no WebGL, the CDN out of reach, a
+  // bug at boot) shows #fatal with the reason instead of leaving a blank or frozen page; the first failure
+  // stays on screen. Once the game runs, an error is no failure to start: it goes to the console and a
+  // toast says so, and the game plays on.
   (() => {
     const showFatal = reason => {
       const fatal = document.getElementById('fatal');
@@ -24,14 +26,26 @@
         + 'Try a current desktop Chrome, Firefox or Edge with WebGL enabled.';
       fatal.hidden = false;
     };
+    const report = (error, reason) => {
+      if (!window.__game.started) {
+        showFatal(reason);
+        return;
+      }
+      console.error('Iron Dome: uncaught error:', error);
+      try {
+        window.__game.hud?.toast('Something went wrong (see console)', 'warn');
+      } catch {
+        // The HUD may be what failed: the console has the error.
+      }
+    };
     // Capturing, so that a script element that fails to load (its error event does not bubble) is seen too.
     window.addEventListener('error', event => {
-      if (event instanceof ErrorEvent) showFatal(event.error?.message || event.message);
+      if (event instanceof ErrorEvent) report(event.error ?? event.message, event.error?.message || event.message);
       else if (event.target instanceof HTMLScriptElement) {
-        showFatal('the game\'s scripts could not be loaded (is cdn.jsdelivr.net reachable?)');
+        report(event.target.src, 'the game\'s scripts could not be loaded (is cdn.jsdelivr.net reachable?)');
       }
     }, true);
-    window.addEventListener('unhandledrejection', event => showFatal(event.reason?.message || event.reason));
+    window.addEventListener('unhandledrejection', event => report(event.reason, event.reason?.message || event.reason));
   })();
 </script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
